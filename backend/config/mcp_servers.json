@@ -1,0 +1,11 @@
+{
+  "servers": [
+    {
+      "name": "example_tools",
+      "url": "http://localhost:3001",
+      "description": "示例工具服务器",
+      "enabled": true,
+      "tools": []
+    }
+  ]
+}
