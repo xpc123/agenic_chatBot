@@ -1,14 +1,19 @@
 """
-核心 Agent 引擎 - 主控制器
-基于 LangChain 1.0 create_agent
+对话协调器 - 业务编排层
 
-这是应用的核心协调器，负责:
+这是应用的核心协调器（Orchestrator），负责:
 1. 接收用户输入
 2. 处理 @路径引用（Context Loading）
 3. RAG 知识检索
-4. 调用 LangChain Agent 执行 ReAct 循环
-5. 管理对话记忆
-6. 生成并返回响应
+4. 统一上下文管理（Context Engineering）
+5. 调用 ExecutorAgent 执行 ReAct 循环
+6. 管理对话记忆
+7. 生成并返回响应
+
+架构说明:
+- Orchestrator 是高层业务协调器（不是 Agent）
+- ExecutorAgent 是底层 Agent 执行引擎（真正的 Agent）
+- ContextManager 统一管理所有上下文来源
 """
 from typing import List, Dict, Any, Optional, AsyncGenerator, Callable
 from loguru import logger
@@ -19,28 +24,31 @@ from ..config import settings
 from .memory import MemoryManager
 from .executor import ToolExecutor
 from .context_loader import ContextLoader
-from .langchain_agent import LangChainAgent, AgentContext
+from .context_manager import ContextManager
+from .agent_executor import ExecutorAgent, AgentContext
 from .tools import calculator, get_current_time, search_web, get_basic_tools
 from ..llm import get_llm_client
 
 
-class AgentEngine:
+class Orchestrator:
     """
-    核心 Agent 引擎
+    对话协调器 - 业务编排层
     
-    基于 LangChain 1.0 create_agent 实现，是应用的主要入口点。
+    负责协调各个模块工作，是应用的主要入口点。
+    注意：这不是 Agent，而是协调器/编排器。
     
     架构说明:
-    - 使用 LangChainAgent 作为底层执行引擎
+    - 使用 ExecutorAgent 作为底层执行引擎（真正的 Agent）
+    - 使用 ContextManager 统一管理上下文（Context Engineering）
     - 通过 Middleware 实现上下文注入、错误处理、历史压缩等
     - 支持 RAG 检索增强
     - 支持 @路径引用加载本地文件
     
     使用示例:
     ```python
-    engine = AgentEngine(memory_manager=memory)
+    orchestrator = Orchestrator(memory_manager=memory)
     
-    async for chunk in engine.chat("你好", session_id="123"):
+    async for chunk in orchestrator.chat("你好", session_id="123"):
         print(chunk)
     ```
     """
@@ -58,7 +66,7 @@ class AgentEngine:
         enable_todo_list: bool = False,
     ):
         """
-        初始化 Agent 引擎
+        初始化协调器
         
         Args:
             memory_manager: 记忆管理器
@@ -78,14 +86,15 @@ class AgentEngine:
         # 构建工具列表：内置工具 + 自定义工具 + MCP 工具
         all_tools = self._build_tools(tools)
         
-        # 获取 LLM 客户端
-        llm_client = get_llm_client()
+        # 初始化 Agent 执行器
+        # 确定使用的模型和提供商
+        provider = settings.LLM_PROVIDER
+        model_name = settings.JEDAI_MODEL if provider == "jedai" else settings.OPENAI_MODEL
         
-        # 初始化 LangChain Agent（使用 LangChain 1.0 create_agent）
-        self.langchain_agent = LangChainAgent(
+        self.agent_executor = ExecutorAgent(
             tools=all_tools,
-            model=llm_client.model,
-            llm=llm_client.llm,
+            model=model_name,
+            provider=provider,
             enable_summarization=enable_summarization,
             enable_pii_filter=enable_pii_filter,
             enable_human_in_loop=enable_human_in_loop,
@@ -96,9 +105,14 @@ class AgentEngine:
         
         self.enable_path_reference = settings.ENABLE_PATH_REFERENCE
         
+        # Context Engineering: 上下文 Token 预算配置
+        self.context_max_tokens = getattr(settings, 'CONTEXT_MAX_TOKENS', 8000)
+        self.context_reserve_tokens = getattr(settings, 'CONTEXT_RESERVE_TOKENS', 2000)
+        
         logger.info(
-            f"AgentEngine initialized with LangChain 1.0 create_agent, "
-            f"tools={len(all_tools)}, path_reference={self.enable_path_reference}"
+            f"Orchestrator initialized, "
+            f"tools={len(all_tools)}, path_reference={self.enable_path_reference}, "
+            f"context_budget={self.context_max_tokens}"
         )
     
     def _build_tools(self, custom_tools: Optional[List[Callable]] = None) -> List[Callable]:
@@ -120,29 +134,21 @@ class AgentEngine:
         mcp_tools = []
         if self.executor:
             try:
-                mcp_tools = self.executor.get_langchain_tools()
-            except Exception as e:
-                logger.warning(f"Failed to load MCP tools: {e}")
-        
-        return builtin_tools + user_tools + mcp_tools
-    
-    async def chat(
-        self,
-        message: str,
-        session_id: str,
-        stream: bool = True,
-        use_rag: bool = True,
-        context: Optional[Dict[str, Any]] = None,
+                mcp_tools = self.executor.get_langchain
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         主对话方法 - 流式输出
         
         处理流程:
-        1. 处理 @路径引用
-        2. RAG 检索
-        3. 保存用户消息
-        4. 调用 Agent
-        5. 保存 AI 回复
+        1. 创建 ContextManager（统一上下文管理）
+        2. 处理 @路径引用
+        3. RAG 检索
+        4. 获取对话历史
+        5. 获取用户偏好（长期记忆）
+        6. 构建统一上下文
+        7. 保存用户消息
+        8. 调用 Agent
+        9. 保存 AI 回复
         
         Args:
             message: 用户消息
@@ -156,11 +162,18 @@ class AgentEngine:
         """
         logger.info(f"Processing message for session {session_id}: {message[:50]}...")
         
-        # 1. 处理 @路径引用
+        # ========== Context Engineering: 统一上下文管理 ==========
+        ctx_manager = ContextManager(
+            max_tokens=self.context_max_tokens,
+            reserve_tokens=self.context_reserve_tokens,
+        )
+        
+        # 1. 处理 @路径引用（高优先级）
         path_context = None
         if self.enable_path_reference:
             path_context = await self._load_path_references(message)
             if path_context:
+                ctx_manager.add_path_references(path_context)
                 yield {
                     "type": "context",
                     "content": f"📎 加载了 {path_context.get('references_count', 0)} 个引用",
@@ -175,19 +188,43 @@ class AgentEngine:
             rag_data = await self._retrieve_knowledge(message, session_id)
             if rag_data:
                 rag_results = rag_data["sources"]
+                ctx_manager.add_rag_results(rag_results)
                 yield {
                     "type": "sources",
                     "content": rag_results,
                     "metadata": {"count": len(rag_results)}
                 }
         
-        # 3. 保存用户消息到记忆
+        # 3. 获取对话历史
+        conversation_history = await self.memory.get_history(session_id)
+        if conversation_history:
+            history_messages = [
+                {"role": msg.role.value, "content": msg.content}
+                for msg in conversation_history
+            ]
+            ctx_manager.add_conversation_history(history_messages)
+        
+        # 4. 获取用户偏好（长期记忆，如果支持）
+        if hasattr(self.memory, 'get_user_preferences'):
+            user_id = context.get("user_id", "") if context else ""
+            if user_id:
+                preferences = await self.memory.get_user_preferences(user_id)
+                if preferences:
+                    ctx_manager.add_user_preferences(preferences)
+        
+        # 5. 构建统一上下文
+        unified_context = ctx_manager.build()
+        context_stats = ctx_manager.get_stats()
+        logger.info(f"Context built: {context_stats['total_items']} items, "
+                   f"{context_stats['utilization_percent']} utilization")
+        
+        # 6. 保存用户消息到记忆
         await self.memory.add_message(
             session_id,
             ChatMessage(role=MessageRole.USER, content=message)
         )
         
-        # 4. 使用 LangChain Agent 执行
+        # 7. 使用 Agent 执行
         final_response = ""
         agent_context = AgentContext(
             session_id=session_id,
@@ -196,11 +233,10 @@ class AgentEngine:
             extra_context=context,
         )
         
-        async for chunk in self.langchain_agent.chat(
+        async for chunk in self.agent.chat(
             message=message,
             session_id=session_id,
-            rag_results=rag_results,
-            path_context=path_context,
+            unified_context=unified_context,  # 使用统一上下文
             context=agent_context,
         ):
             yield chunk
@@ -208,7 +244,7 @@ class AgentEngine:
             if chunk.get("type") == "text":
                 final_response = chunk.get("content", "")
         
-        # 5. 保存 AI 回复到记忆
+        # 8. 保存 AI 回复到记忆
         if final_response:
             await self.memory.add_message(
                 session_id,
@@ -282,8 +318,8 @@ class AgentEngine:
         Args:
             tool_func: 使用 @tool 装饰器的函数
         """
-        self.langchain_agent.add_tool(tool_func)
-        logger.info(f"Tool added to AgentEngine: {tool_func.__name__}")
+        self.agent.add_tool(tool_func)
+        logger.info(f"Tool added to Orchestrator: {tool_func.__name__}")
     
     async def invoke(
         self,
@@ -330,7 +366,7 @@ class AgentEngine:
             extra_context=context,
         )
         
-        response = self.langchain_agent.invoke(
+        response = self.agent.invoke(
             message=message,
             session_id=session_id,
             rag_results=rag_results,
@@ -384,3 +420,7 @@ class AgentEngine:
             session_id, 
             max_messages=max_messages
         )
+
+
+# 向后兼容别名
+AgentOrchestrator = Orchestrator

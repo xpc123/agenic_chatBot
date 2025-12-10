@@ -11,7 +11,8 @@ from typing import List, Dict, Any, Optional, AsyncGenerator, Union
 from langchain_core.language_models import BaseChatModel
 from langchain.chat_models import init_chat_model
 from langchain.embeddings import init_embeddings
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+import httpx
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
@@ -29,6 +30,7 @@ class LLMClient:
     - OpenAI (gpt-4o, gpt-4o-mini, gpt-5, etc.)
     - Anthropic (claude-3-5-sonnet, claude-sonnet-4-5, etc.)
     - Google (gemini-1.5-pro, gemini-2.0-flash, etc.)
+    - JedAI (Cadence Internal)
     - Ollama (本地模型)
     - 其他兼容的模型提供商
     
@@ -42,12 +44,15 @@ class LLMClient:
     
     # 使用完整标识符
     client = LLMClient(model="anthropic:claude-3-5-sonnet")
+
+    # 使用 JedAI
+    client = LLMClient(provider="jedai", model="gpt-4")
     ```
     """
     
     def __init__(
         self,
-        provider: str = "openai",
+        provider: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         api_key: Optional[str] = None,
@@ -59,7 +64,7 @@ class LLMClient:
         初始化 LLM 客户端
         
         Args:
-            provider: 提供商 ("openai", "anthropic", "google", "ollama")
+            provider: 提供商 ("openai", "anthropic", "google", "ollama", "jedai")
             model: 模型名称或完整标识符 (如 "gpt-4o" 或 "openai:gpt-4o")
             temperature: 温度参数 (0.0-2.0)
             api_key: API 密钥
@@ -67,16 +72,16 @@ class LLMClient:
             max_tokens: 最大 token 数
             timeout: 超时时间（秒）
         """
-        self.provider = provider
-        self.model = model or settings.OPENAI_MODEL
+        self.provider = provider or settings.LLM_PROVIDER
+        self.model = model or (settings.JEDAI_MODEL if self.provider == "jedai" else settings.OPENAI_MODEL)
         self.temperature = temperature if temperature is not None else settings.OPENAI_TEMPERATURE
         self.max_tokens = max_tokens or settings.OPENAI_MAX_TOKENS
-        self.timeout = timeout or 30
+        self.timeout = timeout or (settings.JEDAI_TIMEOUT if self.provider == "jedai" else 30)
         
         # 使用 LangChain 1.0 的 init_chat_model 初始化
         self.llm = self._init_llm(api_key, api_base)
         
-        logger.info(f"LLMClient initialized: {provider}/{self.model}")
+        logger.info(f"LLMClient initialized: {self.provider}/{self.model}")
     
     def _init_llm(self, api_key: Optional[str], api_base: Optional[str]) -> BaseChatModel:
         """
@@ -86,7 +91,12 @@ class LLMClient:
         - 短格式: "gpt-4o" (自动推断为 "openai:gpt-4o")
         - 长格式: "openai:gpt-4o"
         - Claude: "claude-3-5-sonnet" 或 "anthropic:claude-3-5-sonnet"
+        - JedAI: 使用 ChatOpenAI 兼容接口
         """
+        # JedAI 特殊处理 (使用 ChatOpenAI 兼容接口)
+        if self.provider == "jedai":
+            return self._init_jedai(api_key, api_base)
+
         # 构建模型标识符
         model_id = self._build_model_id()
         
@@ -115,6 +125,127 @@ class LLMClient:
         except Exception as e:
             logger.error(f"Failed to initialize model {model_id}: {e}")
             raise
+
+    def _init_jedai(self, api_key: Optional[str], api_base: Optional[str]) -> BaseChatModel:
+        """
+        初始化 JedAI 客户端 (基于 ChatOpenAI)
+        
+        JedAI 是 Cadence 内部服务，兼容 OpenAI 接口格式，但需要特殊的认证和路径处理。
+        
+        JedAI 支持多种模型类型:
+        - on_prem: 本地部署模型 (Llama, Qwen, Nemotron 等)
+        - gcp_oss: GCP 上的开源模型 (Llama, Qwen, DeepSeek 等)
+        - GEMINI: Google Gemini 模型
+        - Claude: Anthropic Claude 模型 (通过 GCP)
+        - AzureOpenAI: Azure OpenAI 模型
+        - AWSBedrock: AWS Bedrock 模型
+        
+        注意: Azure 成本较高，不推荐使用
+        """
+        base_url = api_base or settings.JEDAI_API_BASE
+        # 确保 base_url 包含正确的 API 路径
+        if not base_url.endswith("/api/copilot/v1/llm"):
+             # 如果是根域名，添加完整路径
+             if base_url.rstrip("/").endswith("cadence.com") or ":5668" in base_url or ":5688" in base_url:
+                 base_url = f"{base_url.rstrip('/')}/api/copilot/v1/llm"
+        
+        api_key = api_key or settings.JEDAI_API_KEY
+        
+        # 确定 LangChain 集成的模型名称
+        # JedAI 使用特定的 model 参数来路由到不同的后端
+        langchain_model_name = self._get_jedai_langchain_model_name()
+        
+        logger.info(f"Initializing JedAI client: {base_url}, model={self.model}, langchain_model={langchain_model_name}")
+        
+        # JedAI 需要特殊的 headers
+        default_headers = {
+            "Content-Type": "application/json",
+            "accept": "*/*",
+        }
+        
+        # 如果有 API Key，添加到 Authorization header
+        if api_key:
+            default_headers["Authorization"] = f"Bearer {api_key}"
+            
+        # 使用 ChatOpenAI 作为底层实现，因为 JedAI 兼容 OpenAI 接口
+        return ChatOpenAI(
+            model=langchain_model_name,
+            openai_api_key=api_key or "dummy-key", # JedAI 可能不需要 key 或者使用 bearer token
+            openai_api_base=base_url,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            timeout=self.timeout,
+            default_headers=default_headers,
+            http_client=httpx.Client(verify=settings.JEDAI_VERIFY_SSL),
+            model_kwargs=self._get_jedai_model_kwargs()
+        )
+    
+    def _get_jedai_langchain_model_name(self) -> str:
+        """
+        获取 JedAI 用于 LangChain 的模型名称
+        
+        JedAI 通过 model 参数来路由请求到不同的后端:
+        - on_prem 模型直接使用模型名
+        - GCP 模型使用 "gcp_oss", "GEMINI", "Claude" 等
+        - Azure 使用 "AzureOpenAI"
+        - AWS 使用 "AWSBedrock"
+        """
+        from ..config import JEDAI_LANGCHAIN_MODEL_NAMES, JEDAI_SUPPORTED_LLM_MODELS
+        
+        # 检查是否是 on_prem 模型（直接使用模型名）
+        if self.model in JEDAI_SUPPORTED_LLM_MODELS.get("on_prem", []):
+            return self.model
+        
+        # 根据 model_type 设置确定 LangChain 模型名
+        model_type = settings.JEDAI_MODEL_TYPE.lower()
+        
+        if model_type == "on_prem":
+            return self.model
+        elif model_type in ["gemini", "gcp_gemini"]:
+            return "GEMINI"
+        elif model_type in ["claude", "gcp_claude"]:
+            return "Claude"
+        elif model_type in ["gcp_oss", "gcp_llama", "gcp_qwen", "gcp_deepseek", "gcp_openai"]:
+            return "gcp_oss"
+        elif model_type in ["azure", "azureopenai"]:
+            return "AzureOpenAI"
+        elif model_type in ["aws", "awsbedrock"]:
+            return "AWSBedrock"
+        else:
+            # 默认返回配置的模型名或 gcp_oss
+            return JEDAI_LANGCHAIN_MODEL_NAMES.get(model_type, "gcp_oss")
+    
+    def _get_jedai_model_kwargs(self) -> Dict[str, Any]:
+        """
+        获取 JedAI 特定的模型参数
+        
+        不同的模型类型需要不同的额外参数:
+        - GCP 模型需要 project, location, deployment
+        - Azure 需要 endpoint, api_version, deployment
+        - AWS 需要 service_name, region, deployment
+        """
+        model_type = settings.JEDAI_MODEL_TYPE.lower()
+        kwargs = {}
+        
+        # GCP 模型参数 (Gemini, Claude, gcp_oss)
+        if model_type in ["gemini", "gcp_gemini", "claude", "gcp_claude", "gcp_oss", "gcp_llama", "gcp_qwen", "gcp_deepseek", "gcp_openai"]:
+            kwargs["project"] = settings.JEDAI_GCP_PROJECT
+            kwargs["location"] = settings.JEDAI_GCP_LOCATION
+            kwargs["deployment"] = self.model
+        
+        # Azure OpenAI 参数
+        elif model_type in ["azure", "azureopenai"]:
+            kwargs["endpoint"] = settings.JEDAI_AZURE_ENDPOINT
+            kwargs["api_version"] = settings.JEDAI_AZURE_API_VERSION
+            kwargs["deployment"] = settings.JEDAI_AZURE_DEPLOYMENT
+        
+        # AWS Bedrock 参数
+        elif model_type in ["aws", "awsbedrock"]:
+            kwargs["service_name"] = settings.JEDAI_AWS_SERVICE_NAME
+            kwargs["region"] = settings.JEDAI_AWS_REGION
+            kwargs["deployment"] = self.model
+        
+        return kwargs
     
     def _build_model_id(self) -> str:
         """构建模型标识符"""
@@ -258,7 +389,7 @@ class EmbeddingClient:
     
     def __init__(
         self,
-        provider: str = "openai",
+        provider: Optional[str] = None,
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         dimensions: Optional[int] = None,
@@ -267,27 +398,57 @@ class EmbeddingClient:
         初始化 Embedding 客户端
         
         Args:
-            provider: 提供商 ("openai", "google", "local")
+            provider: 提供商 ("openai", "google", "local", "jedai")
             model: 模型名称
             api_key: API 密钥
             dimensions: 向量维度
         """
-        self.provider = provider
+        self.provider = provider or settings.EMBEDDING_PROVIDER
         self.model = model or settings.EMBEDDING_MODEL
         self.dimensions = dimensions or settings.EMBEDDING_DIMENSION
         
         # 初始化 Embeddings
         self.embeddings = self._init_embeddings(api_key)
         
-        logger.info(f"EmbeddingClient initialized: {provider}/{self.model}")
+        logger.info(f"EmbeddingClient initialized: {self.provider}/{self.model}")
     
     def _init_embeddings(self, api_key: Optional[str]):
-        """初始化 Embeddings 模型"""
+        """
+        初始化 Embeddings 模型
+        
+        JedAI 支持多种 embedding 提供商:
+        - http: 本地部署 (JEDAI_MODEL_INT_EMBED_2, bge-large-en-v1.5, Qwen3-Embedding-4B, embeddinggemma-300m)
+        - gcp: GCP (text-embedding-004, text-embedding-005, gemini-embedding-001 等)
+        - aws: AWS (amazon.titan-embed-text-v1, cohere.embed-english-v3 等)
+        - azure: Azure (text-embedding-3-small, text-embedding-ada-002)
+        """
         if self.provider == "openai":
             return OpenAIEmbeddings(
                 model=self.model,
-                api_key=api_key or settings.OPENAI_API_KEY,
+                api_key=api_key or settings.OPENAI_API_KEY or "dummy-key", # Ensure key is present even if dummy for init
                 dimensions=self.dimensions,
+            )
+        elif self.provider == "jedai":
+            base_url = settings.JEDAI_API_BASE
+            # 确保 base_url 包含正确的 API 路径
+            if not base_url.endswith("/api/copilot/v1/llm"):
+                 # 如果是根域名，添加完整路径
+                 if base_url.rstrip("/").endswith("cadence.com") or ":5668" in base_url or ":5688" in base_url:
+                     base_url = f"{base_url.rstrip('/')}/api/copilot/v1/llm"
+            
+            # 如果有自定义 embedding URL，使用它
+            if settings.JEDAI_EMBEDDING_URL:
+                base_url = settings.JEDAI_EMBEDDING_URL
+            
+            logger.info(f"Initializing JedAI embedding client: {base_url}, model={self.model}, provider={settings.JEDAI_EMBEDDING_PROVIDER}")
+            
+            return OpenAIEmbeddings(
+                model=self.model,
+                api_key=api_key or settings.JEDAI_API_KEY or "dummy-key",
+                openai_api_base=base_url,
+                dimensions=self.dimensions,
+                check_embedding_ctx_length=False,
+                http_client=httpx.Client(verify=settings.JEDAI_VERIFY_SSL)
             )
         else:
             # 尝试使用 init_embeddings

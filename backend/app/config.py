@@ -1,11 +1,137 @@
 """
 应用配置管理
 """
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from pathlib import Path
 import os
+
+
+# JedAI 支持的 LLM 模型列表
+JEDAI_SUPPORTED_LLM_MODELS = {
+    # On-prem 模型
+    "on_prem": [
+        "Llama3.1_JEDAI_MODEL_CHAT_2",
+        "Llama3.3_JEDAI_MODEL_CHAT_2",
+        "nvidia/llama-3_3-nemotron-super-49b-v1_5",
+        "Qwen3-32B",
+        "openai/gpt-oss-120b",
+    ],
+    # GCP 模型 (通过 JedAI 代理)
+    "gcp_gemini": [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash", 
+        "gemini-2.5-flash-lite",
+        "gemini-3-pro-preview",
+    ],
+    "gcp_claude": [
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+        "claude-sonnet-4",
+        "claude-3-7-sonnet",
+        "claude-opus-4-1",
+        "claude-3-5-haiku",
+        "claude-3-5-sonnet-v2",
+    ],
+    "gcp_llama": [
+        "meta/llama-3.1-70b-instruct-maas",
+        "meta/llama-3.3-70b-instruct-maas",
+        "meta/llama-3.1-405b-instruct-maas",
+        "meta/llama-3.1-8b-instruct-maas",
+        "meta/llama-4-scout-17b-16e-instruct-maas",
+        "meta/llama-4-maverick-17b-128e-instruct-maas",
+    ],
+    "gcp_qwen": [
+        "qwen/qwen3-235b-a22b-instruct-2507-maas",
+        "qwen/qwen3-coder-480b-a35b-instruct-maas",
+    ],
+    "gcp_deepseek": [
+        "deepseek-ai/deepseek-v3.1-maas",
+        "deepseek-ai/deepseek-r1-0528-maas",
+    ],
+    "gcp_openai": [
+        "openai/gpt-oss-120b-maas",
+    ],
+    # Azure OpenAI 模型 (注意: 成本较高，不推荐使用)
+    "azure": [
+        "gpt-4o",
+        "o4-mini",
+        "gpt-5",
+        "gpt-5-mini",
+        "gpt-5-2",
+        "rnd01-gpt4-vision",
+    ],
+    # AWS Bedrock 模型
+    "aws": [
+        "amazon.titan-text-express-v1",
+        "amazon.titan-text-lite-v1",
+        "anthropic.claude-3-haiku-20240307-v1:0",
+        "anthropic.claude-3-opus-20240229-v1:0",
+        "anthropic.claude-3-5-haiku-20241022-v1:0",
+        "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "us.anthropic.claude-opus-4-20250514-v1:0",
+        "us.anthropic.claude-opus-4-1-20250805-v1:0",
+    ],
+}
+
+# JedAI 支持的 Embedding 模型
+JEDAI_SUPPORTED_EMBEDDING_MODELS = {
+    "http": [
+        "JEDAI_MODEL_INT_EMBED_2",
+        "bge-large-en-v1.5",
+        "Qwen3-Embedding-4B",
+        "embeddinggemma-300m",
+    ],
+    "aws": [
+        "amazon.titan-embed-text-v1",
+        "amazon.titan-embed-text-v2:0",
+        "cohere.embed-english-v3",
+        "cohere.embed-multilingual-v3",
+    ],
+    "gcp": [
+        "text-multilingual-embedding-002",
+        "text-embedding-004",
+        "text-embedding-005",
+        "gemini-embedding-001",
+    ],
+    "azure": [
+        "text-embedding-3-small",
+        "text-embedding-ada-002",
+    ],
+}
+
+# JedAI 支持的 Rerank 模型
+JEDAI_SUPPORTED_RERANK_MODELS = {
+    "http": [
+        "JEDAI_MODEL_RERANK_2",
+        "bge-reranker-v2-m3",
+        "Qwen3-Reranker-4B",
+    ],
+    "aws": [
+        "amazon.rerank-v1:0",
+        "cohere.rerank-v3-5:0",
+    ],
+    "gcp": [
+        "semantic-ranker-default@latest",
+        "semantic-ranker-default-004",
+        "semantic-ranker-fast-004",
+        "semantic-ranker-default-003",
+        "semantic-ranker-default-002",
+    ],
+}
+
+# JedAI LangChain 集成模型名称映射
+# 用于 langchain_openai.ChatOpenAI 的 model_name 参数
+JEDAI_LANGCHAIN_MODEL_NAMES = {
+    "on_prem": "Llama3.1_JEDAI_MODEL_CHAT_2",  # 或 Llama3.3_JEDAI_MODEL_CHAT_2
+    "azure": "AzureOpenAI",
+    "claude": "Claude",
+    "gemini": "GEMINI",
+    "gcp_oss": "gcp_oss",
+}
 
 
 class Settings(BaseSettings):
@@ -19,7 +145,8 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # LLM配置
-    OPENAI_API_KEY: str = Field(default="", description="OpenAI API密钥")
+    LLM_PROVIDER: str = "jedai"  # openai, jedai, anthropic, ollama
+    OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API密钥")
     OPENAI_API_BASE: str = "https://api.openai.com/v1"
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
     OPENAI_TEMPERATURE: float = 0.7
@@ -29,9 +156,62 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_MODEL: str = "claude-3-opus-20240229"
     
-    # Embedding配置
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    EMBEDDING_DIMENSION: int = 1536
+    # JedAI配置 (Cadence Internal)
+    JEDAI_API_KEY: Optional[str] = None  # Bearer token from login
+    JEDAI_API_BASE: str = "http://sjf-dsgdspr-084.cadence.com:5668"
+    JEDAI_LLM_ENDPOINT: str = "/api/copilot/v1/llm/chat/completions"
+    JEDAI_EMBEDDING_ENDPOINT: str = "/api/copilot/v1/llm/embeddings"
+    JEDAI_RERANK_ENDPOINT: str = "/api/copilot/v1/llm/rerank"
+    JEDAI_LOGIN_ENDPOINT: str = "/api/v1/security/login"
+    
+    # JedAI LLM 模型配置
+    # 模型类型: on_prem, AzureOpenAI, Claude, GEMINI, gcp_oss, AWSBedrock
+    JEDAI_MODEL_TYPE: str = "gcp_oss"  # JedAI model type for API routing
+    JEDAI_MODEL: str = "meta/llama-3.3-70b-instruct-maas"  # 默认使用 Llama 3.3
+    JEDAI_TIMEOUT: int = 120
+    JEDAI_VERIFY_SSL: bool = False
+    JEDAI_MAX_TOKENS: int = 8000
+    JEDAI_TEMPERATURE: float = 0.7
+    JEDAI_TOP_P: float = 1.0
+    
+    # JedAI GCP 配置 (用于 Gemini, Claude, Llama 等 GCP 模型)
+    JEDAI_GCP_PROJECT: str = "gcp-cdns-llm-test"
+    JEDAI_GCP_LOCATION: str = "us-central1"  # 不同模型可能需要不同 location
+    
+    # JedAI Azure 配置 (用于 Azure OpenAI 模型)
+    JEDAI_AZURE_ENDPOINT: str = "https://llmtest01-eastus2.openai.azure.com"
+    JEDAI_AZURE_API_VERSION: str = "2025-01-01-preview"
+    JEDAI_AZURE_DEPLOYMENT: str = "gpt-4o"
+    
+    # JedAI AWS 配置 (用于 AWS Bedrock 模型)
+    JEDAI_AWS_SERVICE_NAME: str = "bedrock-runtime"
+    JEDAI_AWS_REGION: str = "us-west-2"
+
+    # JedAI Embedding 配置
+    JEDAI_EMBEDDING_PROVIDER: str = "gcp"  # http, aws, gcp, azure
+    JEDAI_EMBEDDING_MODEL: str = "text-embedding-005"
+    JEDAI_EMBEDDING_URL: Optional[str] = None  # 如果需要自定义 embedding URL
+    
+    # JedAI Rerank 配置
+    JEDAI_RERANK_PROVIDER: str = "gcp"  # http, aws, gcp
+    JEDAI_RERANK_MODEL: str = "semantic-ranker-default@latest"
+    JEDAI_RERANK_URL: Optional[str] = None  # 如果需要自定义 rerank URL
+    
+    # JedAI 认证配置
+    JEDAI_USERNAME: Optional[str] = None  # LDAP username
+    JEDAI_PASSWORD: Optional[str] = None  # LDAP password
+    JEDAI_AUTH_PROVIDER: str = "LDAP"
+
+    # Embedding配置 (通用)
+    EMBEDDING_PROVIDER: str = "jedai"  # openai, jedai, local
+    EMBEDDING_MODEL: str = "text-embedding-005"
+    EMBEDDING_DIMENSION: int = 768  # GCP text-embedding-005 默认维度
+    
+    # Rerank 配置 (通用)
+    RERANK_ENABLED: bool = True
+    RERANK_PROVIDER: str = "jedai"  # jedai, cohere, local
+    RERANK_MODEL: str = "semantic-ranker-default@latest"
+    RERANK_TOP_N: int = 5
     
     # 向量数据库配置
     VECTOR_DB_TYPE: str = "chroma"  # chroma, faiss, pinecone
@@ -133,9 +313,9 @@ class Settings(BaseSettings):
         """验证必需的配置项"""
         errors = []
         
-        # 验证 OPENAI_API_KEY
-        if not self.OPENAI_API_KEY or self.OPENAI_API_KEY.strip() == "":
-            errors.append("OPENAI_API_KEY is required")
+        # 验证 OPENAI_API_KEY (如果未配置 JedAI)
+        # if not self.OPENAI_API_KEY or self.OPENAI_API_KEY.strip() == "":
+        #     errors.append("OPENAI_API_KEY is required")
         
         # 验证日志目录
         log_path = Path(self.LOG_FILE)
@@ -180,9 +360,9 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # 启动时验证配置
-try:
-    settings.validate_required_settings()
-except Exception as e:
-    import sys
-    print(f"❌ Configuration error: {e}", file=sys.stderr)
-    sys.exit(1)
+# try:
+#     settings.validate_required_settings()
+# except Exception as e:
+#     import sys
+#     print(f"❌ Configuration error: {e}", file=sys.stderr)
+#     sys.exit(1)
