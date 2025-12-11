@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 RAG检索器 - Retriever
 整合文档处理、Embedding和向量检索

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 FastAPI主应用入口
 """

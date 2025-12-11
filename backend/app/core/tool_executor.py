@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 工具执行器 - Tool Executor
 负责执行MCP工具调用
@@ -203,11 +204,11 @@ class ToolExecutor:
         
         try:
             # 获取所有注册的 MCP 工具
-            mcp_tools = self.registry.list_all_tools()
+            mcp_tools = self.registry.list_tools()
             
             for mcp_tool in mcp_tools:
-                tool_name = mcp_tool.get("name")
-                tool_desc = mcp_tool.get("description", "")
+                tool_name = mcp_tool.name
+                tool_desc = mcp_tool.description
                 
                 # 动态创建 LangChain 工具
                 # 注意：这里使用闭包来捕获工具信息

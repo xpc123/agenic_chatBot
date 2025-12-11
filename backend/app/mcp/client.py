@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 MCP客户端 - Client
 与MCP Server通信的客户端实现

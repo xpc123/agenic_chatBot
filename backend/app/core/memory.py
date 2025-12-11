@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 记忆管理系统 - Memory
 

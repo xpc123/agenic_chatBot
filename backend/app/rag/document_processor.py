@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 文档处理器 - Document Processor
 支持多种文档格式的解析和分块

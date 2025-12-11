@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 基于 LangChain 1.0 的 Agent 实现
 使用 create_agent + Middleware 模式
@@ -61,49 +62,78 @@ class AgentContext:
 
 class RAGContextMiddleware(AgentMiddleware):
     """
-    RAG 上下文注入中间件
+    上下文注入中间件
     
-    在调用模型前，将 RAG 检索结果和 @路径引用内容注入到提示中
+    支持两种模式：
+    1. 统一上下文模式（推荐）：使用 ContextManager 预构建的统一上下文
+    2. 分散上下文模式（兼容）：分别传入 RAG 结果和 @路径引用
+    
+    在调用模型前，将上下文注入到提示中
     """
     
     def __init__(self):
+        self.unified_context: Optional[str] = None  # 统一上下文（推荐）
         self.rag_results: Optional[List[Dict[str, Any]]] = None
         self.path_context: Optional[Dict[str, Any]] = None
+    
+    def set_unified_context(self, unified_context: str):
+        """
+        设置统一上下文（推荐方式）
+        
+        Args:
+            unified_context: 由 ContextManager.build() 生成的统一上下文
+        """
+        self.unified_context = unified_context
+        # 清除分散上下文
+        self.rag_results = None
+        self.path_context = None
     
     def set_context(
         self, 
         rag_results: Optional[List[Dict[str, Any]]] = None,
         path_context: Optional[Dict[str, Any]] = None
     ):
-        """设置上下文（在每次对话前调用）"""
+        """设置分散上下文（兼容旧接口）"""
         self.rag_results = rag_results
         self.path_context = path_context
+        # 清除统一上下文
+        self.unified_context = None
     
     def before_model(self, state: AgentState, runtime) -> Dict[str, Any] | None:
         """在调用模型前注入上下文"""
-        context_parts = []
+        context_content = None
         
-        # 注入 RAG 检索结果
-        if self.rag_results:
-            context_parts.append("## 📚 知识库参考")
-            for i, doc in enumerate(self.rag_results[:5], 1):  # 最多5条
-                content = doc.get('content', '')[:500]
-                source = doc.get('source', 'unknown')
-                score = doc.get('score', 0)
-                context_parts.append(f"### 引用 {i} (相关度: {score:.2f})")
-                context_parts.append(f"**来源**: {source}")
-                context_parts.append(f"**内容**: {content}...")
-            context_parts.append("")
+        # 优先使用统一上下文
+        if self.unified_context:
+            context_content = self.unified_context
+        else:
+            # 兼容模式：构建分散上下文
+            context_parts = []
+            
+            # 注入 RAG 检索结果
+            if self.rag_results:
+                context_parts.append("## 📚 知识库参考")
+                for i, doc in enumerate(self.rag_results[:5], 1):  # 最多5条
+                    content = doc.get('content', '')[:500]
+                    source = doc.get('source', 'unknown')
+                    score = doc.get('score', 0)
+                    context_parts.append(f"### 引用 {i} (相关度: {score:.2f})")
+                    context_parts.append(f"**来源**: {source}")
+                    context_parts.append(f"**内容**: {content}...")
+                context_parts.append("")
+            
+            # 注入 @路径引用内容
+            if self.path_context and self.path_context.get("formatted"):
+                context_parts.append("## 📎 引用的文件内容")
+                context_parts.append(self.path_context["formatted"])
+                context_parts.append("")
+            
+            if context_parts:
+                context_content = "\n".join(context_parts)
         
-        # 注入 @路径引用内容
-        if self.path_context and self.path_context.get("formatted"):
-            context_parts.append("## 📎 引用的文件内容")
-            context_parts.append(self.path_context["formatted"])
-            context_parts.append("")
-        
-        if context_parts:
+        if context_content:
             # 将上下文作为系统消息注入到消息列表开头
-            context_message = SystemMessage(content="\n".join(context_parts))
+            context_message = SystemMessage(content=context_content)
             messages = list(state.get("messages", []))
             # 在第一条用户消息之前插入上下文
             messages.insert(0, context_message)
@@ -112,7 +142,8 @@ class RAGContextMiddleware(AgentMiddleware):
         return None
     
     def clear_context(self):
-        """清除上下文"""
+        """清除所有上下文"""
+        self.unified_context = None
         self.rag_results = None
         self.path_context = None
 
@@ -160,9 +191,16 @@ def enhanced_tool_error_handler(request, handler):
 
 # ==================== 主 Agent 类 ====================
 
-class LangChainAgent:
+class ExecutorAgent:
     """
-    基于 LangChain 1.0 的 Agent
+    执行 Agent - 底层执行引擎
+    
+    这是真正的 Agent，基于 LangChain 1.0 create_agent 实现，负责:
+    - 执行 ReAct 循环（Reason → Act → Observe）
+    - 管理 Middleware（压缩、PII、人工审批等）
+    - 处理工具调用
+    - 注入上下文到 LLM
+    - 流式输出结果
     
     核心特性:
     - 使用 create_agent 构建标准 ReAct 循环
@@ -173,7 +211,7 @@ class LangChainAgent:
     
     使用示例:
     ```python
-    agent = LangChainAgent(
+    agent = ExecutorAgent(
         tools=[my_tool],
         model="gpt-4o",
         enable_summarization=True,
@@ -188,7 +226,7 @@ class LangChainAgent:
         self,
         tools: Optional[List[Callable]] = None,
         model: Optional[str] = None,
-        llm: Optional[Any] = None,
+        provider: str = "openai", # 新增 provider 参数
         enable_summarization: bool = True,
         enable_pii_filter: bool = False,
         enable_human_in_loop: bool = False,
@@ -204,7 +242,7 @@ class LangChainAgent:
         Args:
             tools: 工具列表（使用 @tool 装饰器定义）
             model: 模型标识符 (如 "gpt-4o", "claude-sonnet-4-5-20250929")
-            llm: 已初始化的 LLM 对象 (BaseChatModel)
+            provider: 模型提供商 ("openai", "anthropic", "jedai", etc.)
             enable_summarization: 是否启用对话历史自动压缩
             enable_pii_filter: 是否启用 PII 过滤
             enable_human_in_loop: 是否启用人工审批
@@ -214,9 +252,9 @@ class LangChainAgent:
             fallback_models: 备用模型列表
             max_iterations: 最大迭代次数
         """
-        self.model_name = model or settings.OPENAI_MODEL
-        self.llm_instance = llm
         self.tools = tools or []
+        self.model_name = model or settings.OPENAI_MODEL
+        self.provider = provider # 保存 provider
         self.max_iterations = max_iterations or settings.MAX_ITERATIONS
         
         # 持久化 checkpointer
@@ -240,7 +278,7 @@ class LangChainAgent:
         self.agent = self._build_agent()
         
         logger.info(
-            f"LangChainAgent initialized: model={self.model_name}, "
+            f"ExecutorAgent initialized: model={self.model_name}, "
             f"tools={len(self.tools)}, middleware={len(self.middleware)}"
         )
     
@@ -344,11 +382,16 @@ class LangChainAgent:
         """构建 LangChain 1.0 Agent"""
         system_prompt = self._get_system_prompt()
         
-        # 如果提供了 llm 实例，优先使用
-        model_to_use = self.llm_instance if self.llm_instance else self.model_name
+        # 获取 LLM 客户端实例
+        # 注意：这里我们使用 get_llm_client 来获取统一管理的 LLM 实例
+        # 这样可以复用 client.py 中的初始化逻辑（包括 JedAI 的特殊处理）
+        from ..llm import get_llm_client
+        llm_client = get_llm_client(provider=self.provider, model=self.model_name)
         
+        # 使用 llm_client.llm 作为模型实例
+        # create_agent 支持传入已初始化的 BaseChatModel
         agent = create_agent(
-            model=model_to_use,
+            model=llm_client.llm, 
             tools=self.tools,
             system_prompt=system_prompt,
             middleware=self.middleware,
@@ -403,16 +446,30 @@ class LangChainAgent:
     
     def set_context(
         self,
+        unified_context: Optional[str] = None,
         rag_results: Optional[List[Dict[str, Any]]] = None,
         path_context: Optional[Dict[str, Any]] = None,
     ):
-        """设置对话上下文（RAG 结果和 @路径引用）"""
-        self.rag_context_middleware.set_context(rag_results, path_context)
+        """
+        设置对话上下文
+        
+        Args:
+            unified_context: 统一构建的上下文字符串（推荐使用 ContextManager）
+            rag_results: RAG 检索结果（兼容旧接口）
+            path_context: @路径引用上下文（兼容旧接口）
+        """
+        if unified_context:
+            # 使用统一上下文（Context Engineering）
+            self.rag_context_middleware.set_unified_context(unified_context)
+        else:
+            # 兼容旧接口
+            self.rag_context_middleware.set_context(rag_results, path_context)
     
     async def chat(
         self,
         message: str,
         session_id: str,
+        unified_context: Optional[str] = None,
         rag_results: Optional[List[Dict[str, Any]]] = None,
         path_context: Optional[Dict[str, Any]] = None,
         context: Optional[AgentContext] = None,
@@ -423,15 +480,16 @@ class LangChainAgent:
         Args:
             message: 用户消息
             session_id: 会话 ID（用于持久化）
-            rag_results: RAG 检索结果
-            path_context: @路径引用上下文
+            unified_context: 统一构建的上下文（推荐，由 ContextManager 生成）
+            rag_results: RAG 检索结果（兼容旧接口）
+            path_context: @路径引用上下文（兼容旧接口）
             context: 自定义运行时上下文
         
         Yields:
             事件字典 {"type": "text|tool_call|tool_result|thinking|error", "content": ...}
         """
-        # 设置上下文
-        self.set_context(rag_results, path_context)
+        # 设置上下文（优先使用统一上下文）
+        self.set_context(unified_context, rag_results, path_context)
         
         # 准备输入
         input_data = {
@@ -550,3 +608,7 @@ from .tools import (
     get_builtin_tools,
     get_basic_tools,
 )
+
+
+# 向后兼容别名
+AgentExecutor = ExecutorAgent

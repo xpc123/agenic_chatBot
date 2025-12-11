@@ -1,16 +1,17 @@
+# -*- coding: utf-8 -*-
 """
 核心模块导出
 
 LangChain 1.0 架构:
-- AgentEngine: 主入口，协调上下文加载、RAG、Agent 执行
-- LangChainAgent: 基于 create_agent 的 Agent 实现
+- Orchestrator: 业务协调器（主入口）
+- ExecutorAgent: 基于 create_agent 的 Agent 实现
 - MemoryManager: 会话记忆管理
 - ToolExecutor: MCP 工具执行器
 """
-from .agent import AgentEngine
-from .langchain_agent import LangChainAgent, AgentContext
+from .orchestrator import Orchestrator
+from .agent_engine import ExecutorAgent, AgentContext
 from .memory import MemoryManager
-from .executor import ToolExecutor
+from .tool_executor import ToolExecutor
 from .context_loader import ContextLoader
 from .tools import (
     calculator,
@@ -21,10 +22,14 @@ from .tools import (
     get_basic_tools,
 )
 
+# 向后兼容别名
+AgentEngine = Orchestrator
+
 __all__ = [
     # 主要组件
-    "AgentEngine",
-    "LangChainAgent",
+    "Orchestrator",
+    "AgentEngine",  # 向后兼容别名
+    "ExecutorAgent",
     "AgentContext",
     "MemoryManager",
     "ToolExecutor",

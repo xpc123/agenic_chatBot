@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 MCP工具注册中心 - Tool Registry
 管理所有可用的MCP工具
@@ -194,6 +195,15 @@ class MCPRegistry:
             tools = [t for t in tools if t.enabled]
         
         return tools
+    
+    async def get_all_tools(self) -> List[Tool]:
+        """
+        获取所有工具（异步版本，与list_tools兼容）
+        
+        Returns:
+            工具列表
+        """
+        return self.list_tools(enabled_only=False)
     
     def list_servers(self, enabled_only: bool = True) -> List[MCPServer]:
         """

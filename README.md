@@ -1,45 +1,100 @@
-# Agentic ChatBot - 通用智能对话机器人平台
+# Agentic ChatBot - 5 分钟给你的应用加上 Cursor 级别的 AI 助手
 
 <div align="center">
 
-**基于 LangChain 1.0 架构的通用 AI 助手平台**
+**🚀 快速集成 • 🎯 开箱即用 • 💡 Cursor 级别体验**
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![LangChain](https://img.shields.io/badge/LangChain-1.0-green.svg)](https://python.langchain.com/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)](https://fastapi.tiangolo.com/)
 
-[快速开始](#-快速开始) • [功能特性](#-核心功能) • [文档](#-文档) • [示例](#-使用示例)
+[⚡ 5分钟快速开始](docs/QUICKSTART.md) • [📚 功能特性](#-核心功能) • [🔌 集成示例](#-3-行代码集成) • [📖 完整文档](#-文档)
 
 </div>
 
 ---
 
-## 🎯 项目简介
+## ⚡ 30 秒看懂
 
-Agentic ChatBot 是一个**开箱即用、高度可集成**的智能对话机器人平台，让**任何产品都能快速拥有 AI 助手**。
+### 核心理念：**上下文即能力**
 
-**核心定位**：**"Cursor 的强大功能 + 可集成性 + 应用操作能力"**
+```python
+# 🎯 你只需要提供上下文，AI 自动获得能力
+from app.core.context_manager import ContextManager
 
-### 🚀 核心价值
+# IDE 产品？提供代码上下文
+ctx = ContextManager.for_ide(
+    workspace_path="/project",
+    current_file="src/main.py",
+    diagnostics=errors  # LSP 诊断信息
+)
 
-**快速让任何应用集成 AI 助手，不仅能专业问答，更能辅助用户操作应用，提升效率**
+# 数据分析工具？提供数据上下文  
+ctx = ContextManager.for_data_analysis(
+    dataframe_info={"shape": (1000, 10), "columns": ["id", "name"]},
+    query_history=["SELECT * FROM users"]
+)
 
-- 🎯 **快速集成** - 通过 SDK/API 可快速集成到任何应用（Web、桌面、移动端、IDE、企业系统）
-- 💬 **专业问答** - 基于 RAG 技术，精准回答领域专业问题
-- 🛠️ **操作辅助** - 通过工具调用，帮助用户自动化操作应用功能，提高工作效率
-- 🔌 **开箱即用** - 既可独立使用，也可无缝嵌入现有产品
+# 客服系统？提供用户上下文
+ctx = ContextManager.for_customer_service(
+    user_profile=user_info,
+    order_history=orders
+)
 
-### 为什么选择 Agentic ChatBot？
+# 就这样！AI 理解了你的产品，拥有了相应能力
+```
 
-- ✅ 借鉴 Cursor 的核心能力（@路径引用、上下文理解、智能对话）
-- ✅ 提供 Cursor 做不到的：**开源 SDK，可嵌入任何产品**
-- ✅ 不止于对话：**可调用工具，辅助用户操作应用**，如自动填表、数据查询、流程执行等
-- ✅ 支持独立使用和快速集成两种方式
+**✅ 你不需要理解**：
+- ❌ LLM 模型原理
+- ❌ RAG 检索技术
+- ❌ Agent 规划算法
 
-### 两种使用方式
+**✅ 你只需要知道**：
+- ✅ **你的产品有什么数据？** → 提供上下文
+- ✅ **什么最重要？** → 设置优先级
+- ✅ **完成！** → AI 自动处理其余一切
 
-1. **🚀 独立使用** - 无需任何集成，直接启动即可使用完整的 AI 对话功能
-2. **🔌 快速集成** - 通过 SDK/API 轻松嵌入任何应用（Web、桌面、移动端、IDE），让你的产品瞬间拥有智能助手
+[**→ 立即学习 Context 快速集成**](docs/CONTEXT_INTEGRATION.md)
+
+---
+
+## 🎯 核心定位
+
+**"想要 5 分钟给你的应用加上 Cursor 级别的 AI 助手？我们来了！"**
+
+Agentic ChatBot 是一个**轻量级、可快速集成**的智能对话机器人平台，让**任何产品都能拥有 Cursor 级别的 AI 能力**。
+
+### 🎯 为什么选择我们？
+
+| 维度 | Cursor/Copilot | mcp-agent-graph | **Agentic ChatBot** |
+|------|----------------|-----------------|-------------------|
+| **核心定位** | 代码编辑器 | 可视化工作流平台 | **快速集成的 AI 助手** |
+| **集成时间** | ❌ 无法集成 | ⚠️ 需要部署完整平台 | ✅ **5 分钟** |
+| **@路径引用** | ✅ | ❌ | ✅ **Cursor 风格** |
+| **SDK 集成** | ❌ 闭源 | ⚠️ 有限支持 | ✅ **3 行代码** |
+| **轻量化** | N/A | ❌ 需要 Docker+DB | ✅ **单文件部署** |
+| **开源** | ❌ | ✅ | ✅ **MIT 协议** |
+| **使用场景** | IDE 内使用 | 企业工作流 | **任何应用集成** |
+
+### 🚀 核心优势
+
+- 🎯 **Context 驱动** - 上下文即能力，产品方只需提供数据，AI 自动理解
+- ⚡ **5 分钟集成** - 预设模板 + 链式调用，极简 API
+- 🔧 **零 AI 知识要求** - 不需要理解 LLM/RAG/Agent，只需要了解你的产品
+- 🔌 **真正可集成** - 提供 Python SDK、REST API、WebSocket
+- 💡 **轻量化设计** - 无需 Docker，单文件即可运行
+- 🛠️ **工具生态** - 内置 MCP 协议，可调用任何工具/API
+- 📦 **开箱即用** - 既可独立使用，也可快速嵌入
+
+### 💼 适用场景
+
+| 场景 | 集成方式 | 用时 |
+|------|---------|------|
+| **产品内嵌 AI** | 3 行代码集成 SDK | 5 分钟 |
+| **独立 AI 助手** | 启动服务 + 访问 UI | 3 分钟 |
+| **企业客服系统** | REST API 集成 | 10 分钟 |
+| **IDE 插件** | WebSocket 集成 | 20 分钟 |
+| **数据分析工具** | SDK + 自定义工具 | 30 分钟 |
 
 ### 技术栈
 
@@ -140,64 +195,216 @@ result = agent.invoke({"messages": [{"role": "user", "content": "你好"}]})
 
 ---
 
-## 🎬 快速体验
+### 🎯 Context 快速集成（核心特性）
 
-### 3 分钟看懂如何集成
+不同产品类型，使用不同的预设模板：
 
+#### IDE / 代码编辑器
 ```python
-# 步骤 1: 安装 SDK
-pip install -e sdk/python
+from app.core.context_manager import ContextManager
 
-# 步骤 2: 集成到你的应用 (仅需 3 行代码!)
-from chatbot_sdk import create_client
-
-client = create_client(base_url="http://localhost:8000")
-response = client.chat("帮我查询今天的订单数量")  # AI 自动调用工具查询数据库
-
-# 步骤 3: 完成! 你的应用现在拥有了 AI 助手
+ctx = ContextManager.for_ide(
+    workspace_path="/project",
+    current_file="src/main.py",
+    diagnostics=[{"line": 10, "message": "undefined variable"}],
+    git_info={"branch": "main", "modified_files": ["src/main.py"]}
+)
+# AI 自动理解代码上下文，提供代码建议
 ```
 
-**AI 能做什么？**
-- ✅ 回答专业问题（基于你的文档库）
-- ✅ 执行应用操作（调用你定义的工具/API）
-- ✅ 理解上下文，多轮对话
-- ✅ 提升用户效率 10 倍以上
+#### 数据分析工具
+```python
+ctx = ContextManager.for_data_analysis(
+    dataframe_info={
+        "shape": (1000, 10),
+        "columns": ["id", "name", "age"],
+        "dtypes": {"id": "int", "name": "str"}
+    },
+    query_history=["SELECT * FROM users WHERE age > 30"]
+)
+# AI 自动理解数据结构，生成分析代码
+```
+
+#### 客服系统
+```python
+ctx = ContextManager.for_customer_service(
+    user_profile={"id": "U123", "vip_level": "gold"},
+    order_history=[{"id": "O001", "status": "shipped"}],
+    knowledge_base=knowledge_docs
+)
+# AI 自动理解用户信息，提供个性化服务
+```
+
+#### 自定义产品
+```python
+ctx = (ContextManager()
+       .add_custom("app_state", current_state, priority="HIGH")
+       .add_custom("user_data", user_info, priority="MEDIUM")
+       .add_rag_results(knowledge_base))
+# 完全自定义，适配任何产品
+```
+
+[**→ 查看完整 Context 集成指南**](docs/CONTEXT_INTEGRATION.md)
 
 ---
 
-## 🚀 快速开始
+### 其他核心功能
 
-### 方式一：独立GUI模式（零代码）
+#### @路径引用（Cursor 风格）
+```python
+# 像 Cursor 一样引用文件
+response = bot.chat("@src/models/user.py 这个类有什么问题？")
+```
 
-适合非开发者或需要独立聊天界面的场景。
+#### RAG 知识库
+```python
+# 基于文档智能问答
+bot.upload_document("./docs/product_manual.pdf")
+response = bot.chat("我们产品的核心功能是什么？", use_rag=True)
+```
+
+#### 流式输出
+```python
+# 实时响应
+for chunk in bot.chat_stream("写一个 Python Web 服务"):
+    print(chunk, end="", flush=True)
+```
+
+[**→ 查看完整示例代码**](examples/quick_integration.py)
+
+---
+
+## 🚀 5 分钟快速开始
+
+### ⚡ 方式一：一键安装（推荐）
 
 ```bash
 # 1. 克隆项目
-git clone <repository-url>
-cd agentic_chatBot
+git clone https://github.com/xpc123/agenic_chatBot.git
+cd agenic_chatBot
 
-# 2. 配置上下文
-cp config/config.json.example config.json
-# 编辑 config.json，配置 RAG文档、@路径白名单、MCP工具
+# 2. 一键安装（自动完成所有配置）
+chmod +x quick_install.sh
+./quick_install.sh  # 或使用 quick_install.csh
 
-# 3. 配置环境变量
-cp backend/.env.example backend/.env
-# 编辑 .env，设置 OPENAI_API_KEY
+# 3. 编辑配置，填入你的 API Key
+vi backend/.env  # 设置 OPENAI_API_KEY
 
-# 4. 启动（自动安装依赖）
-source scripts/start.csh
-# 或手动启动: python scripts/standalone_gui.py
+# 4. 启动服务
+cd backend && source venv/bin/activate
+python run.py
+
+# ✅ 完成！服务已启动在 http://localhost:8000
 ```
 
-访问 http://localhost:8000 即可使用完整的聊天界面！
+**就这么简单！总共 5 分钟！**
 
-**配置示例** (`config.json`):
-```json
-{
-  "context": {
-    "rag_sources": ["./docs", "./manual.pdf"],
-    "path_whitelist": ["src/**/*.py"],
-    "mcp_servers": [
+### 🎯 方式二：3 行代码集成
+
+```python
+# 在你的 Python 应用中
+from chatbot_sdk import ChatBot
+
+bot = ChatBot(base_url="http://localhost:8000")
+response = bot.chat("帮我分析 @src/user.py 这个文件")
+
+# 🎉 完成！你的应用现在有了 Cursor 级别的 AI 助手
+```
+
+### 🔌 常见框架集成
+
+<details>
+<summary><b>Flask 集成</b></summary>
+
+```python
+from flask import Flask, request, jsonify
+from chatbot_sdk import ChatBot
+
+app = Flask(__name__)
+bot = ChatBot(base_url="http://localhost:8000")
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    message = request.json.get('message')
+    response = bot.chat(message)
+    return jsonify({'response': response})
+
+if __name__ == '__main__':
+    app.run(port=5000)
+```
+</details>
+
+<details>
+<summary><b>FastAPI 集成</b></summary>
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel
+from chatbot_sdk import ChatBot
+
+app = FastAPI()
+bot = ChatBot(base_url="http://localhost:8000")
+
+class Query(BaseModel):
+    message: str
+
+@app.post("/api/chat")
+async def chat(query: Query):
+    response = bot.chat(query.message)
+    return {"response": response}
+```
+</details>
+
+<details>
+<summary><b>React 前端集成</b></summary>
+
+```tsx
+import { useState } from 'react';
+
+function ChatBot() {
+    const [message, setMessage] = useState('');
+    const [response, setResponse] = useState('');
+    
+    const sendMessage = async () => {
+        const res = await fetch('http://localhost:8000/api/v1/chat/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        setResponse(data.message);
+    };
+    
+    return (
+        <div>
+            <input value={message} onChange={(e) => setMessage(e.target.value)} />
+            <button onClick={sendMessage}>发送</button>
+            <div>{response}</div>
+        </div>
+    );
+}
+```
+</details>
+
+[**→ 查看更多框架集成示例**](examples/framework_integrations.py)
+
+---
+
+## 🎨 3 行代码集成
+
+### 基础用法
+
+```python
+from chatbot_sdk import ChatBot
+
+# 1. 初始化
+bot = ChatBot(base_url="http://localhost:8000")
+
+# 2. 发送消息
+response = bot.chat("你好，介绍一下你的功能")
+
+# 3. 完成！
+print(response)
       {"name": "database", "type": "sqlite", "config": {...}}
     ]
   }
@@ -509,13 +716,26 @@ docker-compose up -d
 
 ## 📖 文档
 
+### 快速开始
+| 文档 | 说明 | 适合人群 |
+|------|------|----------|
+| [**CONTEXT_INTEGRATION.md**](docs/CONTEXT_INTEGRATION.md) | **Context 快速集成指南** ⭐ | **所有产品集成者（必读）** |
+| [QUICKSTART.md](docs/QUICKSTART.md) | 5 分钟快速上手 | 新用户 |
+
+### 核心文档
 | 文档 | 说明 |
 |------|------|
-| [TARGET.md](docs/TARGET.md) | 项目目标与技术选型 |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构设计 |
-| [QUICKSTART.md](docs/QUICKSTART.md) | 5 分钟快速上手 |
-| [INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md) | 集成指南 |
-| [CRITICAL_CODE_FIXES.md](docs/archive/CRITICAL_CODE_FIXES.md) | 关键代码修复清单 |
+| [LANGCHAIN_1.0.md](docs/LANGCHAIN_1.0.md) | LangChain 1.0 技术详解 |
+| [FEATURE_STATUS.md](docs/FEATURE_STATUS.md) | 功能实现状态 |
+| [SETUP.md](docs/SETUP.md) | 安装配置指南 |
+
+### 参考文档
+| 文档 | 说明 |
+|------|------|
+| [COMPETITORS.md](docs/COMPETITORS.md) | 竞品分析 |
+| [SDK README](sdk/python/README.md) | Python SDK 文档 |
+| [Examples](examples/README.md) | 集成示例代码 |
 
 ---
 

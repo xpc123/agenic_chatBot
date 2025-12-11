@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Universal Agentic ChatBot - 启动脚本
 
@@ -12,8 +13,8 @@ from app.config import settings
 from app.llm import get_llm_client, get_embedding_client
 from app.rag.langchain_rag import get_rag_system
 from app.core.memory import MemoryManager
-from app.core.executor import ToolExecutor
-from app.core.agent import AgentEngine
+from app.core.tool_executor import ToolExecutor
+from app.core import AgentEngine  # 使用 __init__.py 中的别名 (Orchestrator)
 from app.mcp import mcp_registry
 
 

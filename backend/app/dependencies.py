@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 依赖注入 - 统一管理组件生命周期
 
@@ -7,10 +8,9 @@ LangChain 1.0 架构:
 - 每次请求创建新的 AgentEngine 实例（复用单例依赖）
 """
 from typing import Optional
-from functools import lru_cache
 
 from .core.memory import MemoryManager
-from .core.executor import ToolExecutor
+from .core.tool_executor import ToolExecutor
 from .core.context_loader import ContextLoader
 from .core.agent import AgentEngine
 from .mcp import mcp_registry
@@ -21,38 +21,42 @@ from loguru import logger
 
 # ==================== 单例组件 ====================
 
-@lru_cache()
+# 使用全局变量存储单例，而不是 lru_cache
+_memory_manager_instance: Optional[MemoryManager] = None
+_tool_executor_instance: Optional[ToolExecutor] = None
+_context_loader_instance: Optional[ContextLoader] = None
+
+
 def get_memory_manager() -> MemoryManager:
     """获取内存管理器实例（单例）"""
-    logger.debug("Creating MemoryManager instance")
-    return MemoryManager()
+    global _memory_manager_instance
+    if _memory_manager_instance is None:
+        logger.debug("Creating MemoryManager instance")
+        _memory_manager_instance = MemoryManager()
+    return _memory_manager_instance
 
 
-@lru_cache()
 def get_tool_executor() -> ToolExecutor:
     """获取工具执行器实例（单例）"""
-    logger.debug("Creating ToolExecutor instance")
-    return ToolExecutor(mcp_registry)
+    global _tool_executor_instance
+    if _tool_executor_instance is None:
+        logger.debug("Creating ToolExecutor instance")
+        _tool_executor_instance = ToolExecutor(mcp_registry)
+    return _tool_executor_instance
 
 
-@lru_cache()
 def get_context_loader() -> ContextLoader:
     """获取上下文加载器实例（单例）"""
-    logger.debug("Creating ContextLoader instance")
-    return ContextLoader()
+    global _context_loader_instance
+    if _context_loader_instance is None:
+        logger.debug("Creating ContextLoader instance")
+        _context_loader_instance = ContextLoader()
+    return _context_loader_instance
 
 
 # ==================== 每次请求创建 ====================
 
-def get_agent_engine(
-    memory_manager: Optional[MemoryManager] = None,
-    tool_executor: Optional[ToolExecutor] = None,
-    context_loader: Optional[ContextLoader] = None,
-    enable_summarization: bool = True,
-    enable_pii_filter: bool = False,
-    enable_human_in_loop: bool = False,
-    enable_todo_list: bool = False,
-) -> AgentEngine:
+def get_agent_engine() -> AgentEngine:
     """
     获取 Agent 引擎实例
     
@@ -61,28 +65,19 @@ def get_agent_engine(
     注意：每次请求都会创建新的 AgentEngine 实例，
     但会复用单例的依赖组件
     
-    Args:
-        memory_manager: 内存管理器（可选，默认使用单例）
-        tool_executor: 工具执行器（可选，默认使用单例）
-        context_loader: 上下文加载器（可选，默认使用单例）
-        enable_summarization: 是否启用对话历史压缩
-        enable_pii_filter: 是否启用 PII 过滤
-        enable_human_in_loop: 是否启用人工审批
-        enable_todo_list: 是否启用任务列表
-    
     Returns:
         AgentEngine 实例
     """
     logger.debug("Creating AgentEngine instance")
     
     return AgentEngine(
-        memory_manager=memory_manager or get_memory_manager(),
-        tool_executor=tool_executor or get_tool_executor(),
-        context_loader=context_loader or get_context_loader(),
-        enable_summarization=enable_summarization,
-        enable_pii_filter=enable_pii_filter,
-        enable_human_in_loop=enable_human_in_loop,
-        enable_todo_list=enable_todo_list,
+        memory_manager=get_memory_manager(),
+        tool_executor=get_tool_executor(),
+        context_loader=get_context_loader(),
+        enable_summarization=True,
+        enable_pii_filter=False,
+        enable_human_in_loop=False,
+        enable_todo_list=False,
     )
 
 
@@ -90,10 +85,12 @@ def get_agent_engine(
 
 def clear_singleton_cache():
     """清理单例缓存（用于测试或重新加载配置）"""
+    global _memory_manager_instance, _tool_executor_instance, _context_loader_instance
+    
     logger.info("Clearing singleton cache")
-    get_memory_manager.cache_clear()
-    get_tool_executor.cache_clear()
-    get_context_loader.cache_clear()
+    _memory_manager_instance = None
+    _tool_executor_instance = None
+    _context_loader_instance = None
     
     # 重置 LLM 客户端
     from .llm.client import reset_clients

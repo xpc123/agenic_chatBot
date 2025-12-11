@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 RAG系统 - 基于LangChain 1.0
 使用LangChain的Document、VectorStore、Retriever等组件
@@ -7,7 +8,7 @@ from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma, FAISS
 from langchain_core.vectorstores import VectorStore
 from langchain_core.retrievers import BaseRetriever
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from loguru import logger
 import os
 

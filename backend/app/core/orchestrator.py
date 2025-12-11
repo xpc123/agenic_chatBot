@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 对话协调器 - 业务编排层
 
@@ -22,10 +23,10 @@ from datetime import datetime
 from ..models.chat import ChatMessage, MessageRole
 from ..config import settings
 from .memory import MemoryManager
-from .executor import ToolExecutor
+from .tool_executor import ToolExecutor
 from .context_loader import ContextLoader
 from .context_manager import ContextManager
-from .agent_executor import ExecutorAgent, AgentContext
+from .agent_engine import ExecutorAgent, AgentContext
 from .tools import calculator, get_current_time, search_web, get_basic_tools
 from ..llm import get_llm_client
 
@@ -134,7 +135,19 @@ class Orchestrator:
         mcp_tools = []
         if self.executor:
             try:
-                mcp_tools = self.executor.get_langchain
+                mcp_tools = self.executor.get_langchain_tools()
+            except Exception as e:
+                logger.warning(f"Failed to get MCP tools: {e}")
+        
+        return builtin_tools + user_tools + mcp_tools
+    
+    async def chat(
+        self,
+        message: str,
+        session_id: str,
+        stream: bool = True,
+        use_rag: bool = True,
+        context: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         主对话方法 - 流式输出
@@ -233,7 +246,7 @@ class Orchestrator:
             extra_context=context,
         )
         
-        async for chunk in self.agent.chat(
+        async for chunk in self.agent_executor.chat(
             message=message,
             session_id=session_id,
             unified_context=unified_context,  # 使用统一上下文
@@ -318,7 +331,7 @@ class Orchestrator:
         Args:
             tool_func: 使用 @tool 装饰器的函数
         """
-        self.agent.add_tool(tool_func)
+        self.agent_executor.add_tool(tool_func)
         logger.info(f"Tool added to Orchestrator: {tool_func.__name__}")
     
     async def invoke(
@@ -366,7 +379,7 @@ class Orchestrator:
             extra_context=context,
         )
         
-        response = self.agent.invoke(
+        response = self.agent_executor.invoke(
             message=message,
             session_id=session_id,
             rag_results=rag_results,

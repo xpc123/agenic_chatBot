@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 LLM 客户端封装 - 基于 LangChain 1.0
 
@@ -498,7 +499,7 @@ _embedding_client: Optional[EmbeddingClient] = None
 
 
 def get_llm_client(
-    provider: str = "openai",
+    provider: Optional[str] = None,
     model: Optional[str] = None,
     **kwargs
 ) -> LLMClient:
@@ -506,8 +507,8 @@ def get_llm_client(
     获取 LLM 客户端（单例）
     
     Args:
-        provider: 提供商
-        model: 模型名称
+        provider: 提供商（默认从 settings.LLM_PROVIDER 读取）
+        model: 模型名称（默认从配置读取）
         **kwargs: 其他参数
     
     Returns:
@@ -515,12 +516,14 @@ def get_llm_client(
     """
     global _llm_client
     if _llm_client is None:
+        # 从 settings 读取默认配置
+        provider = provider or settings.LLM_PROVIDER
         _llm_client = LLMClient(provider=provider, model=model, **kwargs)
     return _llm_client
 
 
 def get_embedding_client(
-    provider: str = "openai",
+    provider: Optional[str] = None,
     model: Optional[str] = None,
     **kwargs
 ) -> EmbeddingClient:
@@ -528,8 +531,8 @@ def get_embedding_client(
     获取 Embedding 客户端（单例）
     
     Args:
-        provider: 提供商
-        model: 模型名称
+        provider: 提供商（默认从 settings.EMBEDDING_PROVIDER 读取）
+        model: 模型名称（默认从配置读取）
         **kwargs: 其他参数
     
     Returns:
@@ -537,6 +540,8 @@ def get_embedding_client(
     """
     global _embedding_client
     if _embedding_client is None:
+        # 从 settings 读取默认配置
+        provider = provider or settings.EMBEDDING_PROVIDER
         _embedding_client = EmbeddingClient(provider=provider, model=model, **kwargs)
     return _embedding_client
 

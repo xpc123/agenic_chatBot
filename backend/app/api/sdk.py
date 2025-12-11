@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 SDK集成接口 - Integration SDK
 提供标准化接口供B端产品集成

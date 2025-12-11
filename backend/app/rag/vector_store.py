@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 向量数据库 - Vector Store
 支持ChromaDB, FAISS等
@@ -80,10 +81,18 @@ class VectorStore:
             self.metadata_store: Dict[int, Dict] = {}
             
             # 尝试加载已有索引
-            index_path = settings.FAISS_INDEX_PATH
-            if os.path.exists(index_path):
-                self.index = faiss.read_index(index_path)
-                logger.info(f"Loaded FAISS index with {self.index.ntotal} vectors")
+            # FAISS_INDEX_PATH 应该是目录，实际文件是 index.faiss
+            index_dir = settings.FAISS_INDEX_PATH
+            index_file = os.path.join(index_dir, "index.faiss")
+            
+            # 确保目录存在
+            os.makedirs(index_dir, exist_ok=True)
+            
+            if os.path.isfile(index_file):
+                self.index = faiss.read_index(index_file)
+                logger.info(f"Loaded FAISS index from {index_file} with {self.index.ntotal} vectors")
+            else:
+                logger.info(f"Created new FAISS index (no existing index found at {index_file})")
             
             logger.info("FAISS initialized")
             
@@ -169,7 +178,10 @@ class VectorStore:
                 }
             
             # 保存索引
-            faiss.write_index(self.index, settings.FAISS_INDEX_PATH)
+            index_dir = settings.FAISS_INDEX_PATH
+            index_file = os.path.join(index_dir, "index.faiss")
+            os.makedirs(index_dir, exist_ok=True)
+            faiss.write_index(self.index, index_file)
             
             logger.info(f"Added {len(chunks)} chunks to FAISS")
             

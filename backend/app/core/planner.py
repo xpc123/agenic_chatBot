@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 任务规划器 - Planning 能力
 基于 Chain-of-Thought 和任务分解

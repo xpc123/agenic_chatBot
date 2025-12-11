@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 LLM模块 - 基于LangChain 1.0
 """

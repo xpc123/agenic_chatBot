@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 LangChain 1.0 工具定义
 
