@@ -144,13 +144,27 @@ class LLMClient:
         注意: Azure 成本较高，不推荐使用
         """
         base_url = api_base or settings.JEDAI_API_BASE
+        
+        # 根据模型类型选择正确的 API 路径
+        # - 端口 5668 + /api/copilot/v1/llm: 支持 on_prem, gcp_oss
+        # - 端口 2513 + /api/assistant/v1/llm: 支持所有模型，包括 Claude, Gemini
+        model_type = settings.JEDAI_MODEL_TYPE.lower()
+        
         # 确保 base_url 包含正确的 API 路径
-        if not base_url.endswith("/api/copilot/v1/llm"):
-             # 如果是根域名，添加完整路径
-             if base_url.rstrip("/").endswith("cadence.com") or ":5668" in base_url or ":5688" in base_url:
-                 base_url = f"{base_url.rstrip('/')}/api/copilot/v1/llm"
+        if not base_url.endswith("/llm"):
+            # 根据模型类型选择 API 端点
+            if model_type in ["claude", "gcp_claude", "gemini", "gcp_gemini", "azure", "azureopenai", "aws", "awsbedrock"]:
+                # 使用 assistant API (支持更多模型)
+                base_url = f"{base_url.rstrip('/')}/api/assistant/v1/llm"
+            else:
+                # 使用 copilot API (on_prem, gcp_oss 等)
+                base_url = f"{base_url.rstrip('/')}/api/copilot/v1/llm"
         
         api_key = api_key or settings.JEDAI_API_KEY
+        
+        # 如果没有 API Key，尝试登录获取
+        if not api_key:
+            api_key = self._jedai_login()
         
         # 确定 LangChain 集成的模型名称
         # JedAI 使用特定的 model 参数来路由到不同的后端
@@ -167,8 +181,12 @@ class LLMClient:
         # 如果有 API Key，添加到 Authorization header
         if api_key:
             default_headers["Authorization"] = f"Bearer {api_key}"
+        
+        # 存储 JedAI 特定参数，在请求时使用
+        self._jedai_extra_body = self._get_jedai_model_kwargs()
             
         # 使用 ChatOpenAI 作为底层实现，因为 JedAI 兼容 OpenAI 接口
+        # 注意：extra_body 参数会被添加到每个请求的 body 中
         return ChatOpenAI(
             model=langchain_model_name,
             openai_api_key=api_key or "dummy-key", # JedAI 可能不需要 key 或者使用 bearer token
@@ -178,18 +196,57 @@ class LLMClient:
             timeout=self.timeout,
             default_headers=default_headers,
             http_client=httpx.Client(verify=settings.JEDAI_VERIFY_SSL),
-            model_kwargs=self._get_jedai_model_kwargs()
+            extra_body=self._jedai_extra_body,  # 使用 extra_body 而不是 model_kwargs
         )
+    
+    def _jedai_login(self) -> Optional[str]:
+        """
+        JedAI 登录获取 token
+        """
+        import httpx as sync_httpx
+        
+        if not settings.JEDAI_USERNAME or not settings.JEDAI_PASSWORD:
+            logger.warning("JedAI username/password not configured, skipping login")
+            return None
+        
+        login_url = f"{settings.JEDAI_API_BASE}/api/v1/security/login"
+        
+        try:
+            with sync_httpx.Client(verify=settings.JEDAI_VERIFY_SSL, timeout=30) as client:
+                response = client.post(
+                    login_url,
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "username": settings.JEDAI_USERNAME,
+                        "password": settings.JEDAI_PASSWORD,
+                        "provider": settings.JEDAI_AUTH_PROVIDER or "LDAP"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    token = data.get('access_token') or data.get('token')
+                    if token:
+                        logger.info("JedAI login successful")
+                        return token
+                
+                logger.error(f"JedAI login failed: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"JedAI login error: {e}")
+            return None
     
     def _get_jedai_langchain_model_name(self) -> str:
         """
         获取 JedAI 用于 LangChain 的模型名称
         
         JedAI 通过 model 参数来路由请求到不同的后端:
-        - on_prem 模型直接使用模型名
-        - GCP 模型使用 "gcp_oss", "GEMINI", "Claude" 等
-        - Azure 使用 "AzureOpenAI"
-        - AWS 使用 "AWSBedrock"
+        - on_prem 模型直接使用模型名 (如 Llama3.3_JEDAI_MODEL_CHAT_2)
+        - GCP Claude/Gemini 使用完整模型名 (如 GCP_claude-sonnet-4-5)
+        - gcp_oss 需要使用 "gcp_oss" 作为 model，deployment 指定具体模型
+        - Azure 使用 "AzureOpenAI_xxx"
+        - AWS 使用 "AWSBedrock_xxx"
         """
         from ..config import JEDAI_LANGCHAIN_MODEL_NAMES, JEDAI_SUPPORTED_LLM_MODELS
         
@@ -202,49 +259,44 @@ class LLMClient:
         
         if model_type == "on_prem":
             return self.model
-        elif model_type in ["gemini", "gcp_gemini"]:
-            return "GEMINI"
         elif model_type in ["claude", "gcp_claude"]:
-            return "Claude"
-        elif model_type in ["gcp_oss", "gcp_llama", "gcp_qwen", "gcp_deepseek", "gcp_openai"]:
-            return "gcp_oss"
+            # Claude 模型直接使用完整模型名 (如 GCP_claude-sonnet-4-5)
+            return self.model
+        elif model_type in ["gemini", "gcp_gemini"]:
+            # Gemini 模型直接使用完整模型名 (如 GCP_gemini-2.5-pro)
+            return self.model
         elif model_type in ["azure", "azureopenai"]:
-            return "AzureOpenAI"
+            # Azure 模型直接使用完整模型名 (如 AzureOpenAI_gpt-4o)
+            return self.model
         elif model_type in ["aws", "awsbedrock"]:
-            return "AWSBedrock"
+            # AWS 模型直接使用完整模型名
+            return self.model
+        elif model_type in ["gcp_oss", "gcp_llama", "gcp_qwen", "gcp_deepseek", "gcp_openai"]:
+            # gcp_oss 需要使用 "gcp_oss" 作为 model，具体模型通过 deployment 指定
+            return "gcp_oss"
         else:
             # 默认返回配置的模型名或 gcp_oss
-            return JEDAI_LANGCHAIN_MODEL_NAMES.get(model_type, "gcp_oss")
+            return JEDAI_LANGCHAIN_MODEL_NAMES.get(model_type, self.model)
     
     def _get_jedai_model_kwargs(self) -> Dict[str, Any]:
         """
-        获取 JedAI 特定的模型参数
+        获取 JedAI 特定的模型参数 (extra_body)
         
-        不同的模型类型需要不同的额外参数:
-        - GCP 模型需要 project, location, deployment
-        - Azure 需要 endpoint, api_version, deployment
-        - AWS 需要 service_name, region, deployment
+        根据 JedAI 文档:
+        - gcp_oss 需要 project, location, deployment 参数
+        - Claude/Gemini/Azure/AWS 模型直接使用完整模型名，不需要额外参数
         """
         model_type = settings.JEDAI_MODEL_TYPE.lower()
         kwargs = {}
         
-        # GCP 模型参数 (Gemini, Claude, gcp_oss)
-        if model_type in ["gemini", "gcp_gemini", "claude", "gcp_claude", "gcp_oss", "gcp_llama", "gcp_qwen", "gcp_deepseek", "gcp_openai"]:
+        # 只有 gcp_oss 类型需要额外的 GCP 参数
+        if model_type in ["gcp_oss", "gcp_llama", "gcp_qwen", "gcp_deepseek", "gcp_openai"]:
             kwargs["project"] = settings.JEDAI_GCP_PROJECT
             kwargs["location"] = settings.JEDAI_GCP_LOCATION
             kwargs["deployment"] = self.model
         
-        # Azure OpenAI 参数
-        elif model_type in ["azure", "azureopenai"]:
-            kwargs["endpoint"] = settings.JEDAI_AZURE_ENDPOINT
-            kwargs["api_version"] = settings.JEDAI_AZURE_API_VERSION
-            kwargs["deployment"] = settings.JEDAI_AZURE_DEPLOYMENT
-        
-        # AWS Bedrock 参数
-        elif model_type in ["aws", "awsbedrock"]:
-            kwargs["service_name"] = settings.JEDAI_AWS_SERVICE_NAME
-            kwargs["region"] = settings.JEDAI_AWS_REGION
-            kwargs["deployment"] = self.model
+        # Claude/Gemini/Azure/AWS 直接使用完整模型名，不需要 extra_body
+        # 例如: GCP_claude-sonnet-4-5, GCP_gemini-2.5-pro, AzureOpenAI_gpt-4o
         
         return kwargs
     
