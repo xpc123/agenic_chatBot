@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 独立GUI模式启动器
 方式二：配置即用，无需编码
@@ -17,6 +18,10 @@ from loguru import logger
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
+# 加载 backend/.env 环境变量
+from dotenv import load_dotenv
+load_dotenv(PROJECT_ROOT / 'backend' / '.env')
+
 # 添加backend路径
 sys.path.insert(0, str(PROJECT_ROOT / 'backend'))
 
@@ -25,6 +30,7 @@ from app.core import AgentEngine
 from app.core.memory import MemoryManager
 from app.core.tool_executor import ToolExecutor
 from app.core.context_loader import ContextLoader
+from app.core.planner import AgentPlanner
 from app.mcp import mcp_registry
 from app.rag.langchain_rag import RAGSystem
 
@@ -158,15 +164,19 @@ class StandaloneGUI:
         # 4. 创建核心组件
         memory_manager = MemoryManager()
         tool_executor = ToolExecutor(mcp_registry)
-        planner = AgentPlanner(None) if self.config.features.enable_planning else None
         
-        # 5. 创建Agent
+        # 5. 创建Agent (Orchestrator)
         self.agent = AgentEngine(
             memory_manager=memory_manager,
             tool_executor=tool_executor,
-            planner=planner,
             context_loader=context_loader,
+            enable_summarization=False,  # 禁用需要 OpenAI key 的功能
         )
+        
+        # 保存其他组件供后续使用
+        self.memory_manager = memory_manager
+        self.tool_executor = tool_executor
+        self.context_loader = context_loader
         
         logger.info("✓ All components initialized")
         logger.info("=" * 60)
