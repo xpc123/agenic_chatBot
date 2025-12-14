@@ -60,7 +60,7 @@ class Orchestrator:
         tool_executor: Optional[ToolExecutor] = None,
         context_loader: Optional[ContextLoader] = None,
         tools: Optional[List[Callable]] = None,
-        enable_summarization: bool = True,
+        enable_summarization: bool = False,  # 默认禁用，需要 OpenAI key
         enable_pii_filter: bool = False,
         enable_human_in_loop: bool = False,
         human_approval_tools: Optional[List[str]] = None,

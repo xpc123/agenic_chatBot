@@ -10,7 +10,7 @@ import json
 import uuid
 
 from ..models.chat import ChatRequest, ChatResponse, StreamChunk
-from ..core.agent import AgentEngine
+from ..core import AgentEngine
 from ..core.memory import MemoryManager
 from ..dependencies import (
     get_agent_engine,

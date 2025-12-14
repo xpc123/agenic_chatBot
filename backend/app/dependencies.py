@@ -12,7 +12,7 @@ from typing import Optional
 from .core.memory import MemoryManager
 from .core.tool_executor import ToolExecutor
 from .core.context_loader import ContextLoader
-from .core.agent import AgentEngine
+from .core import AgentEngine
 from .mcp import mcp_registry
 from .llm.client import get_llm_client
 from .config import settings
@@ -74,7 +74,7 @@ def get_agent_engine() -> AgentEngine:
         memory_manager=get_memory_manager(),
         tool_executor=get_tool_executor(),
         context_loader=get_context_loader(),
-        enable_summarization=True,
+        enable_summarization=False,  # 默认禁用，需要 OpenAI key
         enable_pii_filter=False,
         enable_human_in_loop=False,
         enable_todo_list=False,

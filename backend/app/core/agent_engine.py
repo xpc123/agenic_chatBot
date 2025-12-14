@@ -227,12 +227,12 @@ class ExecutorAgent:
         tools: Optional[List[Callable]] = None,
         model: Optional[str] = None,
         provider: str = "openai", # 新增 provider 参数
-        enable_summarization: bool = True,
+        enable_summarization: bool = False,  # 默认禁用，需要 OpenAI key
         enable_pii_filter: bool = False,
         enable_human_in_loop: bool = False,
         human_approval_tools: Optional[List[str]] = None,
         enable_todo_list: bool = False,
-        enable_model_fallback: bool = True,
+        enable_model_fallback: bool = False,  # 默认禁用，需要 OpenAI/Anthropic key
         fallback_models: Optional[List[str]] = None,
         max_iterations: Optional[int] = None,
     ):
@@ -298,8 +298,8 @@ class ExecutorAgent:
         # 1. RAG 上下文注入（自定义）
         middleware.append(self.rag_context_middleware)
         
-        # 2. 日志中间件
-        middleware.extend([log_model_request, log_model_response])
+        # 2. 日志中间件 (暂时禁用，可能有兼容性问题)
+        # middleware.extend([log_model_request, log_model_response])
         
         # 3. 模型调用限制（防止无限循环）
         middleware.append(

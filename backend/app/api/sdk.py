@@ -13,7 +13,7 @@ import time
 
 from ..config import settings
 from ..models.chat import ChatRequest
-from ..core.agent import AgentEngine
+from ..core import AgentEngine
 from ..dependencies import get_agent_engine
 from ..exceptions import (
     LLMError,

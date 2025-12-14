@@ -21,9 +21,9 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT / 'backend'))
 
 from app.config_loader import get_config_loader, AppConfig
-from app.core.agent import AgentEngine
+from app.core import AgentEngine
 from app.core.memory import MemoryManager
-from app.core.executor import ToolExecutor
+from app.core.tool_executor import ToolExecutor
 from app.core.context_loader import ContextLoader
 from app.mcp import mcp_registry
 from app.rag.langchain_rag import RAGSystem

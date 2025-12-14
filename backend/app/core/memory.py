@@ -78,6 +78,15 @@ class MemoryManager:
         
         return messages
     
+    # 别名方法，保持向后兼容
+    async def get_history(
+        self,
+        session_id: str,
+        max_messages: Optional[int] = None,
+    ) -> List[ChatMessage]:
+        """get_conversation_history 的别名"""
+        return await self.get_conversation_history(session_id, max_messages)
+    
     async def add_message(
         self,
         session_id: str,

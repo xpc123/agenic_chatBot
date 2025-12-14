@@ -39,15 +39,27 @@ async def lifespan(app: FastAPI):
     # 启动时执行
     logger.info("🚀 Starting Agentic ChatBot...")
     
-    # 验证配置
+    # 验证配置 - 根据 LLM_PROVIDER 检查相应的配置
     try:
         from .exceptions import ConfigurationError
-        if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.strip() == "":
-            raise ConfigurationError(
-                message="OPENAI_API_KEY is not configured",
-                config_key="OPENAI_API_KEY"
-            )
-        logger.info("✅ Configuration validated")
+        provider = getattr(settings, 'LLM_PROVIDER', 'openai')
+        
+        if provider == 'jedai':
+            # JedAI 模式：检查 JedAI 配置
+            if not getattr(settings, 'JEDAI_API_BASE', None):
+                raise ConfigurationError(
+                    message="JEDAI_API_BASE is not configured",
+                    config_key="JEDAI_API_BASE"
+                )
+            logger.info(f"✅ Configuration validated (provider: {provider})")
+        else:
+            # OpenAI/其他模式：检查 OPENAI_API_KEY
+            if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.strip() == "":
+                raise ConfigurationError(
+                    message="OPENAI_API_KEY is not configured",
+                    config_key="OPENAI_API_KEY"
+                )
+            logger.info("✅ Configuration validated")
     except ConfigurationError as e:
         logger.error(f"Configuration error: {e.message}")
         raise
