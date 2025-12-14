@@ -1,0 +1,64 @@
+{
+  "app_name": "My AI Assistant",
+  "description": "基于 Agentic ChatBot 的智能助手",
+  
+  "context": {
+    "rag_sources": [
+      "./docs",
+      "./knowledge_base",
+      "./user_manual.pdf"
+    ],
+    "path_whitelist": [
+      "src/**/*.py",
+      "src/**/*.ts",
+      "config/**/*.yml",
+      "config/**/*.json",
+      "docs/**/*.md"
+    ],
+    "mcp_servers": [
+      {
+        "name": "database",
+        "type": "sqlite",
+        "config": {
+          "database_path": "./data/app.db"
+        }
+      },
+      {
+        "name": "api_server",
+        "type": "http",
+        "config": {
+          "base_url": "https://api.yourapp.com",
+          "auth": {
+            "type": "bearer",
+            "token": "${API_TOKEN}"
+          }
+        }
+      }
+    ]
+  },
+  
+  "ui": {
+    "theme": "light",
+    "primary_color": "#4F46E5",
+    "title": "智能助手",
+    "welcome_message": "你好！我是您的AI助手，有什么可以帮您的吗？",
+    "placeholder": "输入您的问题..."
+  },
+  
+  "features": {
+    "enable_rag": true,
+    "enable_planning": true,
+    "enable_path_reference": true,
+    "enable_mcp_tools": true,
+    "max_conversation_history": 50
+  },
+  
+  "security": {
+    "allowed_domains": ["localhost", "*.yourapp.com"],
+    "max_file_size_mb": 10,
+    "rate_limit": {
+      "requests_per_minute": 60,
+      "requests_per_hour": 1000
+    }
+  }
+}

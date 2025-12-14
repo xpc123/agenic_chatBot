@@ -336,8 +336,8 @@ class ExecutorAgent:
             )
         )
         
-        # 7. 增强的工具错误处理
-        middleware.append(enhanced_tool_error_handler)
+        # 7. 增强的工具错误处理 - 已禁用（需要异步实现）
+        # middleware.append(enhanced_tool_error_handler)
         
         # 8. 模型故障切换（可选）
         if enable_model_fallback:

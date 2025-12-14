@@ -1,0 +1,78 @@
+{
+  "session_id": "gradio-session",
+  "messages": [
+    {
+      "role": "user",
+      "content": "请用 calculator 工具计算 123 + 456",
+      "timestamp": "2025-12-14 21:45:38.145425",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "计算完成！**123 + 456 = 579**",
+      "timestamp": "2025-12-14 21:45:44.039099",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "请用 calculator 工具计算 123 + 456",
+      "timestamp": "2025-12-14 21:46:00.917531",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "计算完成！**123 + 456 = 579** ✅",
+      "timestamp": "2025-12-14 21:46:06.613102",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "计算 (123 + 456) * 789",
+      "timestamp": "2025-12-14 21:46:11.054879",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "计算完成！**(123 + 456) * 789 = 456,831** ✅",
+      "timestamp": "2025-12-14 21:46:16.877200",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "计算 (123+456)*789",
+      "timestamp": "2025-12-14 21:46:37.654533",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "计算完成！**(123+456)*789 = 456,831** ✅",
+      "timestamp": "2025-12-14 21:46:43.637054",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "user",
+      "content": "现在几点了？",
+      "timestamp": "2025-12-14 21:47:01.552179",
+      "metadata": null,
+      "tool_calls": null
+    },
+    {
+      "role": "assistant",
+      "content": "现在是 **2025年12月14日 21:47:04，星期日** 🕐",
+      "timestamp": "2025-12-14 21:47:07.593581",
+      "metadata": null,
+      "tool_calls": null
+    }
+  ],
+  "created_at": "2025-12-14 21:47:07.593635",
+  "updated_at": "2025-12-14 21:47:07.593620",
+  "metadata": null
+}

@@ -35,9 +35,19 @@ class GradioChatBot:
         self.agent = None
         self.memory = None
         self.session_id = "gradio-session"
+        self._initialized = False
+        # 创建持久的事件循环
+        self._loop = asyncio.new_event_loop()
         
-    async def initialize(self):
-        """初始化 Agent"""
+    def _run_async(self, coro):
+        """在持久事件循环中运行协程"""
+        return self._loop.run_until_complete(coro)
+        
+    def initialize(self):
+        """初始化 Agent（同步）"""
+        if self._initialized:
+            return
+            
         logger.info("Initializing ChatBot...")
         
         # 创建核心组件
@@ -53,13 +63,11 @@ class GradioChatBot:
             enable_summarization=False,
         )
         
+        self._initialized = True
         logger.info("✅ ChatBot initialized!")
         
-    async def chat_async(self, message: str, history: list) -> str:
+    async def _chat_async(self, message: str) -> str:
         """异步处理消息"""
-        if self.agent is None:
-            await self.initialize()
-        
         try:
             # agent.chat 返回 AsyncGenerator，需要迭代收集结果
             full_response = ""
@@ -67,15 +75,21 @@ class GradioChatBot:
                 message=message,
                 session_id=self.session_id
             ):
-                if chunk.get("type") == "text":
-                    full_response += chunk.get("content", "")
-                elif chunk.get("type") == "tool_call":
-                    tool_name = chunk.get("tool_name", "unknown")
-                    logger.info(f"Tool call: {tool_name}")
-                elif chunk.get("type") == "error":
-                    full_response += f"\n❌ {chunk.get('content', 'Error')}"
+                chunk_type = chunk.get("type", "")
+                if chunk_type == "text":
+                    full_response = chunk.get("content", "")  # 取最后一个完整响应
+                elif chunk_type == "tool_call":
+                    meta = chunk.get("metadata", {})
+                    tool_name = meta.get("tool", "unknown")
+                    tool_args = meta.get("args", {})
+                    logger.info(f"🔧 Tool call: {tool_name}, args: {tool_args}")
+                elif chunk_type == "tool_result":
+                    result_content = chunk.get("metadata", {}).get("result", "")
+                    logger.info(f"✅ Tool result: {result_content[:200]}")
+                elif chunk_type == "error":
+                    full_response = chunk.get("content", "Error")
             
-            return full_response if full_response else "（无响应）"
+            return full_response if full_response else "（AI 正在思考中...）"
         except Exception as e:
             logger.error(f"Chat error: {e}")
             import traceback
@@ -83,8 +97,13 @@ class GradioChatBot:
             return f"❌ 错误: {str(e)}"
     
     def chat(self, message: str, history: list) -> str:
-        """同步包装器"""
-        return asyncio.run(self.chat_async(message, history))
+        """同步聊天接口（Gradio 调用）"""
+        # 确保初始化
+        if not self._initialized:
+            self.initialize()
+        
+        # 在持久事件循环中运行异步聊天
+        return self._run_async(self._chat_async(message))
 
 
 def create_demo():
