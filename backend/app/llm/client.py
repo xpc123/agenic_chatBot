@@ -483,25 +483,58 @@ class EmbeddingClient:
             )
         elif self.provider == "jedai":
             base_url = settings.JEDAI_API_BASE
-            # 确保 base_url 包含正确的 API 路径
-            if not base_url.endswith("/api/copilot/v1/llm"):
-                 # 如果是根域名，添加完整路径
-                 if base_url.rstrip("/").endswith("cadence.com") or ":5668" in base_url or ":5688" in base_url:
-                     base_url = f"{base_url.rstrip('/')}/api/copilot/v1/llm"
             
-            # 如果有自定义 embedding URL，使用它
+            # 如果有自定义 embedding URL，直接使用
             if settings.JEDAI_EMBEDDING_URL:
                 base_url = settings.JEDAI_EMBEDDING_URL
+            else:
+                # JedAI Embedding API 使用 /api/copilot/v1/llm/embeddings
+                # 参考: https://wiki.cadence.com/cgi-bin/moin.cgi/JedAI/JedAI_Models
+                if not base_url.endswith("/embeddings"):
+                    base_url = f"{base_url.rstrip('/')}/api/copilot/v1/llm"
+            
+            # 获取 API key
+            jedai_api_key = api_key or settings.JEDAI_API_KEY
+            if not jedai_api_key:
+                # 尝试登录获取 token
+                from ..llm.client import LLMClient
+                jedai_api_key = LLMClient._jedai_login(None) or "dummy-key"
             
             logger.info(f"Initializing JedAI embedding client: {base_url}, model={self.model}, provider={settings.JEDAI_EMBEDDING_PROVIDER}")
             
+            # JedAI embedding 需要特殊的 headers 和 extra_body
+            default_headers = {
+                "Content-Type": "application/json",
+                "accept": "*/*",
+            }
+            if jedai_api_key and jedai_api_key != "dummy-key":
+                default_headers["Authorization"] = f"Bearer {jedai_api_key}"
+            
+            # 根据 embedding provider 构建 extra_body
+            extra_body = {}
+            embedding_provider = settings.JEDAI_EMBEDDING_PROVIDER.lower()
+            if embedding_provider == "gcp":
+                extra_body = {
+                    "project": settings.JEDAI_GCP_PROJECT,
+                    "location": settings.JEDAI_GCP_LOCATION,
+                    "provider": "gcp",
+                }
+            elif embedding_provider == "http":
+                extra_body = {"provider": "http"}
+            elif embedding_provider == "aws":
+                extra_body = {"provider": "aws"}
+            elif embedding_provider == "azure":
+                extra_body = {"provider": "azure"}
+            
             return OpenAIEmbeddings(
                 model=self.model,
-                api_key=api_key or settings.JEDAI_API_KEY or "dummy-key",
+                api_key=jedai_api_key,
                 openai_api_base=base_url,
                 dimensions=self.dimensions,
                 check_embedding_ctx_length=False,
-                http_client=httpx.Client(verify=settings.JEDAI_VERIFY_SSL)
+                http_client=httpx.Client(verify=settings.JEDAI_VERIFY_SSL),
+                default_headers=default_headers,
+                extra_body=extra_body if extra_body else None,
             )
         else:
             # 尝试使用 init_embeddings
