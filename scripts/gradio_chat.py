@@ -25,7 +25,24 @@ from loguru import logger
 # 导入核心组件
 from app.core import AgentEngine, MemoryManager, ToolExecutor
 from app.core.context_loader import ContextLoader
+from app.core.agent_engine import init_tool_registry, get_tool_registry
 from app.mcp import mcp_registry
+
+
+# ==================== 初始化工具注册表 ====================
+
+def setup_tool_registry():
+    """初始化全局工具注册表"""
+    api_config_path = str(PROJECT_ROOT / 'backend' / 'config' / 'api_tools.json')
+    
+    registry = init_tool_registry(
+        load_builtin=True,
+        load_extended=True,
+        api_config_path=api_config_path if os.path.exists(api_config_path) else None,
+    )
+    
+    logger.info(f"🔧 工具注册表初始化完成，共 {len(registry.get_tool_names())} 个工具")
+    return registry
 
 
 class GradioChatBot:
@@ -134,7 +151,20 @@ class GradioChatBot:
 
 def create_demo():
     """创建增强版 Gradio 界面"""
+    
+    # 首先初始化工具注册表
+    registry = setup_tool_registry()
+    
     bot = GradioChatBot()
+    
+    # 获取工具列表用于显示
+    tool_list = registry.list_tools()
+    tool_markdown = "\n".join([
+        f"- {'✅' if t['enabled'] else '⏸️'} **{t['name']}**: {t['description'][:30]}..."
+        for t in tool_list[:10]  # 最多显示10个
+    ])
+    if len(tool_list) > 10:
+        tool_markdown += f"\n- ... 还有 {len(tool_list) - 10} 个工具"
     
     with gr.Blocks(
         title="🤖 Agentic ChatBot",
@@ -194,11 +224,7 @@ def create_demo():
                 
                 gr.Markdown("---")
                 gr.Markdown("### 🛠️ 可用工具")
-                gr.Markdown("""
-                - 🧮 **calculator**: 数学计算
-                - ⏰ **get_current_time**: 时间查询
-                - 📅 **get_current_date**: 日期查询
-                """)
+                gr.Markdown(tool_markdown if tool_markdown else "暂无工具")
                 
                 gr.Markdown("---")
                 gr.Markdown("### ℹ️ 系统信息")
@@ -206,6 +232,7 @@ def create_demo():
                 - **模型**: Claude Sonnet 4.5
                 - **框架**: LangChain 1.0
                 - **向量库**: FAISS
+                - **工具数量**: {len(tool_list)}
                 - **会话ID**: `{bot.session_id[:8]}...`
                 """)
         

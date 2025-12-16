@@ -531,32 +531,18 @@ def get_system_info() -> str:
 
 def get_extended_tools() -> List:
     """
-    获取扩展工具集（包含 HTTP 和系统工具）
+    获取扩展工具集（仅包含新增的 HTTP 和系统工具）
+    
+    注意：不包含已在 get_builtin_tools 中的工具，避免重复注册
     
     Returns:
         扩展工具列表
     """
     return [
-        # 基础工具
-        calculator,
-        get_current_time,
-        get_current_date,
-        word_count,
-        
-        # 文本工具
-        text_to_uppercase,
-        text_to_lowercase,
-        format_json,
-        validate_json,
-        
-        # 代码执行
-        run_python_code,
-        read_file_content,
-        
-        # HTTP 工具
+        # HTTP 工具（新增）
         http_request,
         url_fetch,
         
-        # 系统工具
+        # 系统工具（新增）
         get_system_info,
     ]

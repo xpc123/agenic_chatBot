@@ -227,6 +227,8 @@ class ExecutorAgent:
         tools: Optional[List[Callable]] = None,
         model: Optional[str] = None,
         provider: str = "openai", # 新增 provider 参数
+        use_tool_registry: bool = True,  # 新增：使用工具注册表
+        tool_categories: Optional[List[str]] = None,  # 新增：工具分类过滤
         enable_summarization: bool = False,  # 默认禁用，需要 OpenAI key
         enable_pii_filter: bool = False,
         enable_human_in_loop: bool = False,
@@ -240,9 +242,11 @@ class ExecutorAgent:
         初始化 LangChain Agent
         
         Args:
-            tools: 工具列表（使用 @tool 装饰器定义）
+            tools: 工具列表（使用 @tool 装饰器定义），如果为 None 且 use_tool_registry=True，则从注册表获取
             model: 模型标识符 (如 "gpt-4o", "claude-sonnet-4-5-20250929")
             provider: 模型提供商 ("openai", "anthropic", "jedai", etc.)
+            use_tool_registry: 是否使用工具注册表（默认 True）
+            tool_categories: 从注册表获取工具时的分类过滤（如 ["builtin", "extended"]）
             enable_summarization: 是否启用对话历史自动压缩
             enable_pii_filter: 是否启用 PII 过滤
             enable_human_in_loop: 是否启用人工审批
@@ -252,7 +256,28 @@ class ExecutorAgent:
             fallback_models: 备用模型列表
             max_iterations: 最大迭代次数
         """
-        self.tools = tools or []
+        # 处理工具列表
+        if tools is not None:
+            # 如果显式传入工具，使用传入的
+            self.tools = tools
+        elif use_tool_registry:
+            # 从工具注册表获取
+            registry = get_tool_registry()
+            if registry.get_tool_names():
+                # 注册表已初始化
+                if tool_categories:
+                    self.tools = registry.get_tools(categories=set(tool_categories))
+                else:
+                    self.tools = registry.get_all_tools()
+                logger.info(f"📦 从注册表加载了 {len(self.tools)} 个工具")
+            else:
+                # 注册表为空，使用默认工具
+                self.tools = get_basic_tools()
+                logger.info(f"📦 使用默认工具: {len(self.tools)} 个")
+        else:
+            # 不使用注册表，使用默认工具
+            self.tools = get_basic_tools()
+        
         self.model_name = model or settings.OPENAI_MODEL
         self.provider = provider # 保存 provider
         self.max_iterations = max_iterations or settings.MAX_ITERATIONS
@@ -607,7 +632,95 @@ from .tools import (
     search_web,
     get_builtin_tools,
     get_basic_tools,
+    get_extended_tools,
 )
+
+from .tool_registry import (
+    ToolRegistry,
+    ToolPermission,
+    get_tool_registry,
+)
+
+
+# ==================== 全局工具注册表 ====================
+
+def init_tool_registry(
+    load_builtin: bool = True,
+    load_extended: bool = True,
+    api_config_path: Optional[str] = None,
+) -> ToolRegistry:
+    """
+    初始化全局工具注册表
+    
+    Args:
+        load_builtin: 是否加载内置工具
+        load_extended: 是否加载扩展工具（HTTP、系统信息等）
+        api_config_path: API 工具配置文件路径
+    
+    Returns:
+        初始化后的工具注册表
+    """
+    registry = get_tool_registry()
+    
+    # 加载内置工具
+    if load_builtin:
+        builtin_tools = get_builtin_tools()
+        count = registry.register_many(
+            builtin_tools, 
+            permission=ToolPermission.PUBLIC, 
+            category="builtin"
+        )
+        logger.info(f"📦 加载了 {count} 个内置工具")
+    
+    # 加载扩展工具
+    if load_extended:
+        extended_tools = get_extended_tools()
+        count = registry.register_many(
+            extended_tools,
+            permission=ToolPermission.PUBLIC,
+            category="extended"
+        )
+        logger.info(f"🔧 加载了 {count} 个扩展工具")
+    
+    # 加载 API 工具配置
+    if api_config_path:
+        import os
+        if os.path.exists(api_config_path):
+            count = registry.load_from_config(api_config_path)
+            logger.info(f"🌐 从配置加载了 {count} 个 API 工具")
+        else:
+            logger.warning(f"API 配置文件不存在: {api_config_path}")
+    
+    return registry
+
+
+def get_tools_from_registry(
+    categories: Optional[List[str]] = None,
+    exclude_tools: Optional[List[str]] = None,
+) -> List:
+    """
+    从注册表获取工具列表
+    
+    Args:
+        categories: 要包含的分类列表（None 表示全部）
+        exclude_tools: 要排除的工具名称列表
+    
+    Returns:
+        工具列表
+    """
+    registry = get_tool_registry()
+    
+    # 获取所有启用的工具
+    if categories:
+        tools = registry.get_tools(categories=set(categories))
+    else:
+        tools = registry.get_all_tools()
+    
+    # 排除指定工具
+    if exclude_tools:
+        tools = [t for t in tools if t.name not in exclude_tools]
+    
+    return tools
 
 
 # 向后兼容别名
