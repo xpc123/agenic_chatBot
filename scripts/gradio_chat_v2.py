@@ -381,7 +381,7 @@ class EnhancedChatBot:
             yield f"❌ 错误: {str(e)}", []
     
     def chat_stream(self, message: str, history: list):
-        """流式聊天接口"""
+        """流式聊天接口（同步版）"""
         if not message.strip():
             yield history, ""
             return
@@ -393,15 +393,32 @@ class EnhancedChatBot:
         history.append({"role": "assistant", "content": "🤔 *思考中...*"})
         yield history, ""
         
-        # 流式获取响应
-        async def get_response():
+        # 同步收集所有响应
+        async def collect_response():
+            """收集完整响应"""
+            full_response = ""
+            tool_calls = []
+            
             async for response, tools in self._stream_chat(message):
-                return response, tools
+                full_response = response
+                tool_calls = tools
+            
+            return full_response, tool_calls
         
-        response, tools = self._run_async(get_response())
+        try:
+            response, tools = self._run_async(collect_response())
+        except Exception as e:
+            logger.error(f"Chat stream error: {e}")
+            import traceback
+            traceback.print_exc()
+            response = f"❌ 错误: {str(e)}"
+            tools = []
         
         # 更新最后一条消息
-        history[-1] = {"role": "assistant", "content": response}
+        if response:
+            history[-1] = {"role": "assistant", "content": response}
+        else:
+            history[-1] = {"role": "assistant", "content": "（AI 无响应，请重试）"}
         
         # 格式化工具调用信息
         tool_display = ""
