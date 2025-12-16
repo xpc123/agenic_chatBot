@@ -168,6 +168,91 @@ def validate_json(json_string: str) -> str:
         return f"❌ JSON 格式无效: {str(e)}"
 
 
+# ==================== 代码执行工具 ====================
+
+@tool
+def run_python_code(code: str) -> str:
+    """
+    执行 Python 代码并返回结果。
+    
+    ⚠️ 安全警告: 此工具在沙盒中执行代码，限制了危险操作。
+    
+    Args:
+        code: 要执行的 Python 代码
+    
+    Returns:
+        执行结果或错误信息
+    """
+    import sys
+    from io import StringIO
+    
+    # 限制危险操作
+    forbidden = ['import os', 'import subprocess', 'import shutil', 
+                 'open(', '__import__', 'exec(', 'eval(', 'compile(']
+    for f in forbidden:
+        if f in code:
+            return f"❌ 安全限制: 禁止使用 '{f}'"
+    
+    # 捕获输出
+    old_stdout = sys.stdout
+    sys.stdout = StringIO()
+    
+    try:
+        # 创建受限的全局环境
+        safe_globals = {
+            '__builtins__': {
+                'print': print, 'len': len, 'range': range, 'sum': sum,
+                'min': min, 'max': max, 'abs': abs, 'round': round,
+                'list': list, 'dict': dict, 'set': set, 'tuple': tuple,
+                'str': str, 'int': int, 'float': float, 'bool': bool,
+                'sorted': sorted, 'reversed': reversed, 'enumerate': enumerate,
+                'zip': zip, 'map': map, 'filter': filter,
+            }
+        }
+        
+        exec(code, safe_globals)
+        output = sys.stdout.getvalue()
+        
+        return f"✅ 执行成功:\n```\n{output if output else '(无输出)'}\n```"
+    except Exception as e:
+        return f"❌ 执行错误: {type(e).__name__}: {str(e)}"
+    finally:
+        sys.stdout = old_stdout
+
+
+@tool
+def read_file_content(file_path: str, max_lines: int = 100) -> str:
+    """
+    读取文件内容。
+    
+    Args:
+        file_path: 文件路径
+        max_lines: 最大读取行数（默认 100）
+    
+    Returns:
+        文件内容或错误信息
+    """
+    import os
+    
+    # 安全检查
+    if '..' in file_path or file_path.startswith('/'):
+        return "❌ 安全限制: 不允许访问上级目录或绝对路径"
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()[:max_lines]
+            content = ''.join(lines)
+            
+            if len(lines) == max_lines:
+                content += f"\n... (文件已截断，显示前 {max_lines} 行)"
+            
+            return f"📄 文件内容 ({file_path}):\n```\n{content}\n```"
+    except FileNotFoundError:
+        return f"❌ 文件不存在: {file_path}"
+    except Exception as e:
+        return f"❌ 读取错误: {str(e)}"
+
+
 # ==================== 搜索工具（示例）====================
 
 @tool
@@ -250,6 +335,8 @@ def get_builtin_tools() -> List:
         text_to_lowercase,
         format_json,
         validate_json,
+        run_python_code,
+        read_file_content,
         search_web,
         search_knowledge_base,
     ]
@@ -265,6 +352,8 @@ def get_basic_tools() -> List:
     return [
         calculator,
         get_current_time,
+        get_current_date,
+        run_python_code,
     ]
 
 

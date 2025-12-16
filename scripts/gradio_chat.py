@@ -104,32 +104,123 @@ class GradioChatBot:
         
         # 在持久事件循环中运行异步聊天
         return self._run_async(self._chat_async(message))
+    
+    def upload_document(self, file) -> str:
+        """上传文档到知识库"""
+        if not self._initialized:
+            self.initialize()
+        
+        if file is None:
+            return "❌ 请选择文件"
+        
+        try:
+            from app.rag.retriever import retriever
+            
+            # 上传文档
+            doc = self._run_async(retriever.add_document(file.name))
+            return f"✅ 文档上传成功！\n📄 文件名: {doc.filename}\n📊 分块数: {len(doc.chunks) if hasattr(doc, 'chunks') else 'N/A'}"
+        except Exception as e:
+            logger.error(f"Upload failed: {e}")
+            return f"❌ 上传失败: {str(e)}"
+    
+    def clear_session(self) -> str:
+        """清空会话历史"""
+        try:
+            self._run_async(self.memory.clear_session(self.session_id))
+            return "✅ 会话已清空"
+        except Exception as e:
+            return f"❌ 清空失败: {str(e)}"
 
 
 def create_demo():
-    """创建 Gradio 界面"""
+    """创建增强版 Gradio 界面"""
     bot = GradioChatBot()
     
-    # 使用 ChatInterface
-    demo = gr.ChatInterface(
-        fn=bot.chat,
+    with gr.Blocks(
         title="🤖 Agentic ChatBot",
-        description="""
-        **基于 LangChain 1.0 的智能助手**
+    ) as demo:
+        gr.Markdown("""
+        # 🤖 Agentic ChatBot
+        **基于 LangChain 1.0 + Claude Sonnet 4.5 的智能助手**
         
-        功能特性：
-        - 🧮 数学计算
-        - ⏰ 时间查询  
-        - 🔍 网页搜索
-        - 📚 RAG 知识检索
-        """,
-        examples=[
-            "你好，请介绍一下你自己",
-            "计算 (123 + 456) * 789",
-            "现在几点了？",
-            "今天是几号？",
-        ],
-    )
+        ---
+        """)
+        
+        with gr.Row():
+            # 左侧：主聊天区域
+            with gr.Column(scale=3):
+                chatbot = gr.Chatbot(
+                    label="对话",
+                    height=500,
+                )
+                
+                with gr.Row():
+                    msg = gr.Textbox(
+                        label="输入消息",
+                        placeholder="输入您的问题...",
+                        scale=4,
+                        show_label=False,
+                    )
+                    submit_btn = gr.Button("发送", variant="primary", scale=1)
+                
+                with gr.Row():
+                    clear_btn = gr.Button("🗑️ 清空对话", size="sm")
+                    
+                gr.Examples(
+                    examples=[
+                        "你好，请介绍一下你自己",
+                        "计算 (123 + 456) * 789",
+                        "现在几点了？",
+                        "今天是星期几？",
+                        "用 Python 计算斐波那契数列前10项",
+                    ],
+                    inputs=msg,
+                )
+            
+            # 右侧：功能面板
+            with gr.Column(scale=1):
+                gr.Markdown("### 📚 知识库管理")
+                
+                file_upload = gr.File(
+                    label="上传文档",
+                    file_types=[".txt", ".pdf", ".md", ".docx"],
+                )
+                upload_btn = gr.Button("📤 上传到知识库", size="sm")
+                upload_status = gr.Textbox(
+                    label="上传状态",
+                    interactive=False,
+                    lines=3,
+                )
+                
+                gr.Markdown("---")
+                gr.Markdown("### 🛠️ 可用工具")
+                gr.Markdown("""
+                - 🧮 **calculator**: 数学计算
+                - ⏰ **get_current_time**: 时间查询
+                - 📅 **get_current_date**: 日期查询
+                """)
+                
+                gr.Markdown("---")
+                gr.Markdown("### ℹ️ 系统信息")
+                gr.Markdown(f"""
+                - **模型**: Claude Sonnet 4.5
+                - **框架**: LangChain 1.0
+                - **向量库**: FAISS
+                - **会话ID**: `{bot.session_id[:8]}...`
+                """)
+        
+        # 事件处理 - Gradio 6.x 使用新的消息格式
+        def respond(message, history):
+            response = bot.chat(message, history)
+            # Gradio 6.x Chatbot 需要 messages 格式
+            history.append({"role": "user", "content": message})
+            history.append({"role": "assistant", "content": response})
+            return "", history
+        
+        submit_btn.click(respond, [msg, chatbot], [msg, chatbot])
+        msg.submit(respond, [msg, chatbot], [msg, chatbot])
+        clear_btn.click(lambda: [], None, chatbot)
+        upload_btn.click(bot.upload_document, file_upload, upload_status)
     
     return demo
 
@@ -147,7 +238,7 @@ if __name__ == "__main__":
     demo = create_demo()
     demo.launch(
         server_name="0.0.0.0",
-        server_port=7861,  # 使用 7861 端口
-        share=False,  # 设置为 True 可生成公网链接
+        server_port=7861,
+        share=False,
         show_error=True,
     )

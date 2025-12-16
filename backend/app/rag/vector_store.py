@@ -295,6 +295,39 @@ class VectorStore:
         elif self.db_type == "faiss":
             # FAISS不支持直接删除，需要重建索引
             logger.warning("FAISS does not support deletion, index rebuild required")
+    
+    async def get_all_documents(self) -> List[Dict[str, Any]]:
+        """
+        获取所有文档（用于 BM25 关键词检索）
+        
+        Returns:
+            所有文档的列表
+        """
+        if self.db_type == "chroma":
+            try:
+                results = self.collection.get()
+                docs = []
+                for i, content in enumerate(results.get('documents', [])):
+                    docs.append({
+                        'content': content,
+                        'metadata': results['metadatas'][i] if results.get('metadatas') else {}
+                    })
+                return docs
+            except Exception as e:
+                logger.error(f"ChromaDB get_all failed: {e}")
+                return []
+                
+        elif self.db_type == "faiss":
+            # 从 metadata_store 获取所有文档
+            docs = []
+            for idx, metadata in self.metadata_store.items():
+                docs.append({
+                    'content': metadata.get('content', ''),
+                    'metadata': metadata.get('metadata', {})
+                })
+            return docs
+        
+        return []
 
 
 # 全局实例

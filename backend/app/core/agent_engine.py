@@ -164,14 +164,14 @@ def log_model_response(state: AgentState, response, runtime) -> None:
 
 
 @wrap_tool_call
-def enhanced_tool_error_handler(request, handler):
+async def enhanced_tool_error_handler(request, handler):
     """
-    增强的工具错误处理中间件
+    增强的工具错误处理中间件（异步版本）
     
     提供更友好的错误消息和自动重试建议
     """
     try:
-        return handler(request)
+        return await handler(request)
     except Exception as e:
         tool_name = request.tool_call.get("name", "unknown")
         error_msg = str(e)
@@ -336,8 +336,8 @@ class ExecutorAgent:
             )
         )
         
-        # 7. 增强的工具错误处理 - 已禁用（需要异步实现）
-        # middleware.append(enhanced_tool_error_handler)
+        # 7. 增强的工具错误处理（异步版本）
+        middleware.append(enhanced_tool_error_handler)
         
         # 8. 模型故障切换（可选）
         if enable_model_fallback:

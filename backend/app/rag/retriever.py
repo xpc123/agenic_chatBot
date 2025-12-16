@@ -5,6 +5,8 @@ RAG检索器 - Retriever
 """
 from typing import List, Dict, Any, Optional
 from loguru import logger
+import jieba
+from rank_bm25 import BM25Okapi
 
 from ..models.document import Document, DocumentChunk
 from ..config import settings
@@ -153,15 +155,41 @@ class RAGRetriever:
         top_k: int,
     ) -> List[Dict[str, Any]]:
         """
-        关键词检索 (简化版)
+        BM25 关键词检索
         
-        实际应用中可以使用:
-        - BM25
-        - Elasticsearch
-        - 全文搜索引擎
+        使用 jieba 分词 + BM25 算法
         """
-        # TODO: 实现关键词检索
-        return []
+        # 获取所有文档用于 BM25
+        all_docs = await self.vector_store.get_all_documents()
+        
+        if not all_docs:
+            return []
+        
+        # 使用 jieba 分词
+        tokenized_corpus = [list(jieba.cut(doc['content'])) for doc in all_docs]
+        tokenized_query = list(jieba.cut(query))
+        
+        # 构建 BM25 索引
+        bm25 = BM25Okapi(tokenized_corpus)
+        
+        # 计算分数
+        scores = bm25.get_scores(tokenized_query)
+        
+        # 获取 top_k 结果
+        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+        
+        results = []
+        for idx in top_indices:
+            if scores[idx] > 0:
+                results.append({
+                    'content': all_docs[idx]['content'],
+                    'metadata': all_docs[idx].get('metadata', {}),
+                    'score': float(scores[idx]),
+                    'search_type': 'keyword'
+                })
+        
+        logger.debug(f"BM25 search returned {len(results)} results")
+        return results
     
     def _merge_results(
         self,
@@ -172,11 +200,45 @@ class RAGRetriever:
         """
         融合向量检索和关键词检索结果
         
-        使用Reciprocal Rank Fusion (RRF)
+        使用 Reciprocal Rank Fusion (RRF) 算法
+        RRF(d) = Σ 1/(k + rank(d))  where k=60 is a constant
         """
-        # 简化版: 只返回向量结果
-        # TODO: 实现RRF算法
-        return vector_results
+        k = 60  # RRF 常数
+        
+        # 计算每个文档的 RRF 分数
+        doc_scores = {}  # content_hash -> {score, doc}
+        
+        # 处理向量检索结果
+        for rank, doc in enumerate(vector_results, 1):
+            content_hash = hash(doc['content'][:200])
+            if content_hash not in doc_scores:
+                doc_scores[content_hash] = {'score': 0, 'doc': doc}
+            doc_scores[content_hash]['score'] += alpha * (1 / (k + rank))
+        
+        # 处理关键词检索结果
+        for rank, doc in enumerate(keyword_results, 1):
+            content_hash = hash(doc['content'][:200])
+            if content_hash not in doc_scores:
+                doc_scores[content_hash] = {'score': 0, 'doc': doc}
+            doc_scores[content_hash]['score'] += (1 - alpha) * (1 / (k + rank))
+        
+        # 按 RRF 分数排序
+        sorted_items = sorted(
+            doc_scores.values(),
+            key=lambda x: x['score'],
+            reverse=True
+        )
+        
+        # 更新分数并返回
+        results = []
+        for item in sorted_items:
+            doc = item['doc'].copy()
+            doc['rrf_score'] = item['score']
+            doc['search_type'] = 'hybrid'
+            results.append(doc)
+        
+        logger.debug(f"RRF merged {len(vector_results)} vector + {len(keyword_results)} keyword = {len(results)} results")
+        return results
     
     async def _rerank(
         self,
@@ -184,15 +246,61 @@ class RAGRetriever:
         results: List[Dict],
     ) -> List[Dict]:
         """
-        重排序结果
+        使用 LLM 重排序结果
         
-        可以使用:
-        - Cross-encoder模型
-        - LLM打分
-        - 自定义规则
+        为每个文档计算与查询的相关性分数
         """
-        # TODO: 实现重排序
-        # 简化版: 保持原顺序
+        if len(results) <= 1:
+            return results
+        
+        try:
+            from ..llm.client import LLMClient
+            
+            llm_client = LLMClient()
+            
+            # 构建评分 prompt
+            rerank_prompt = f"""请评估以下文档与查询的相关性，为每个文档打分 (0-10)。
+
+查询: {query}
+
+请只返回 JSON 格式的分数列表，例如: [8, 5, 9, 3]
+
+文档列表:
+"""
+            for i, doc in enumerate(results):
+                content_preview = doc['content'][:300]
+                rerank_prompt += f"\n--- 文档 {i+1} ---\n{content_preview}\n"
+            
+            # 调用 LLM
+            response = await llm_client.chat([
+                {"role": "user", "content": rerank_prompt}
+            ])
+            
+            # 解析分数
+            import json
+            import re
+            
+            # 提取 JSON 数组
+            match = re.search(r'\[[\d,\s]+\]', response)
+            if match:
+                scores = json.loads(match.group())
+                
+                # 应用分数
+                for i, doc in enumerate(results):
+                    if i < len(scores):
+                        doc['rerank_score'] = scores[i]
+                    else:
+                        doc['rerank_score'] = doc.get('score', 0)
+                
+                # 按 rerank_score 排序
+                results = sorted(results, key=lambda x: x.get('rerank_score', 0), reverse=True)
+                logger.info(f"LLM reranking completed: {len(results)} docs reranked")
+            else:
+                logger.warning("Failed to parse rerank scores, using original order")
+                
+        except Exception as e:
+            logger.error(f"Reranking failed: {e}, using original order")
+        
         return results
     
     def _generate_citation(self, result: Dict) -> str:
