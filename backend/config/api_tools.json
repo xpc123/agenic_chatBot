@@ -1,0 +1,113 @@
+{
+  "api_tools": [
+    {
+      "name": "http_get",
+      "description": "发送 HTTP GET 请求到指定 URL，获取响应内容",
+      "url": "{{url}}",
+      "method": "GET",
+      "headers": {},
+      "parameters": [
+        {
+          "name": "url",
+          "type": "string",
+          "description": "要请求的 URL 地址",
+          "required": true
+        }
+      ],
+      "timeout": 30.0,
+      "permission": "basic",
+      "category": "http"
+    },
+    {
+      "name": "weather_query",
+      "description": "查询指定城市的天气信息（示例 API）",
+      "url": "https://api.example.com/weather",
+      "method": "GET",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "parameters": [
+        {
+          "name": "city",
+          "type": "string",
+          "description": "城市名称，如 '北京'、'上海'",
+          "required": true
+        }
+      ],
+      "response_path": "data",
+      "timeout": 10.0,
+      "permission": "public",
+      "category": "weather"
+    },
+    {
+      "name": "translate_text",
+      "description": "翻译文本（示例 API，需要配置真实翻译服务）",
+      "url": "https://api.example.com/translate",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body_template": {
+        "text": "{{text}}",
+        "source": "{{source_lang}}",
+        "target": "{{target_lang}}"
+      },
+      "parameters": [
+        {
+          "name": "text",
+          "type": "string",
+          "description": "要翻译的文本",
+          "required": true
+        },
+        {
+          "name": "source_lang",
+          "type": "string",
+          "description": "源语言代码，如 'zh', 'en'",
+          "required": false,
+          "default": "auto"
+        },
+        {
+          "name": "target_lang",
+          "type": "string",
+          "description": "目标语言代码，如 'en', 'zh'",
+          "required": true
+        }
+      ],
+      "response_path": "result.translated_text",
+      "timeout": 15.0,
+      "permission": "basic",
+      "category": "translation"
+    },
+    {
+      "name": "search_api",
+      "description": "使用搜索 API 搜索网络信息（需要配置真实搜索服务）",
+      "url": "https://api.example.com/search",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer {{API_KEY}}"
+      },
+      "body_template": {
+        "query": "{{query}}",
+        "num_results": 5
+      },
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "description": "搜索查询词",
+          "required": true
+        }
+      ],
+      "response_path": "results",
+      "timeout": 20.0,
+      "permission": "advanced",
+      "category": "search"
+    }
+  ],
+  "settings": {
+    "default_timeout": 30.0,
+    "max_retries": 3,
+    "retry_delay": 1.0
+  }
+}

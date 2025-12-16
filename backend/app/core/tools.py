@@ -175,49 +175,25 @@ def run_python_code(code: str) -> str:
     """
     执行 Python 代码并返回结果。
     
-    ⚠️ 安全警告: 此工具在沙盒中执行代码，限制了危险操作。
+    ⚠️ 安全警告: 此工具在增强沙盒中执行代码，有以下限制:
+    - 超时限制: 10 秒
+    - 禁止危险操作（文件、网络、系统调用）
+    - 输出限制: 最多 50000 字符
+    
+    支持的模块: math, random, datetime, json, re, collections, itertools
     
     Args:
         code: 要执行的 Python 代码
     
     Returns:
         执行结果或错误信息
+    
+    Examples:
+        >>> run_python_code("print([i**2 for i in range(10)])")
+        "✅ 执行成功: [0, 1, 4, 9, 16, 25, 36, 49, 64, 81]"
     """
-    import sys
-    from io import StringIO
-    
-    # 限制危险操作
-    forbidden = ['import os', 'import subprocess', 'import shutil', 
-                 'open(', '__import__', 'exec(', 'eval(', 'compile(']
-    for f in forbidden:
-        if f in code:
-            return f"❌ 安全限制: 禁止使用 '{f}'"
-    
-    # 捕获输出
-    old_stdout = sys.stdout
-    sys.stdout = StringIO()
-    
-    try:
-        # 创建受限的全局环境
-        safe_globals = {
-            '__builtins__': {
-                'print': print, 'len': len, 'range': range, 'sum': sum,
-                'min': min, 'max': max, 'abs': abs, 'round': round,
-                'list': list, 'dict': dict, 'set': set, 'tuple': tuple,
-                'str': str, 'int': int, 'float': float, 'bool': bool,
-                'sorted': sorted, 'reversed': reversed, 'enumerate': enumerate,
-                'zip': zip, 'map': map, 'filter': filter,
-            }
-        }
-        
-        exec(code, safe_globals)
-        output = sys.stdout.getvalue()
-        
-        return f"✅ 执行成功:\n```\n{output if output else '(无输出)'}\n```"
-    except Exception as e:
-        return f"❌ 执行错误: {type(e).__name__}: {str(e)}"
-    finally:
-        sys.stdout = old_stdout
+    from backend.app.core.sandbox import safe_exec
+    return safe_exec(code)
 
 
 @tool
@@ -382,3 +358,205 @@ def create_tool_from_function(
         name=name or func.__name__,
         description=description or func.__doc__ or "无描述",
     )
+
+
+# ==================== HTTP 请求工具 ====================
+
+@tool
+def http_request(url: str, method: str = "GET", headers: str = "", body: str = "") -> str:
+    """
+    发送 HTTP 请求并返回响应。
+    
+    Args:
+        url: 请求 URL
+        method: 请求方法 (GET, POST, PUT, DELETE)
+        headers: 请求头 (JSON 格式字符串，可选)
+        body: 请求体 (JSON 格式字符串，可选)
+    
+    Returns:
+        响应内容或错误信息
+    
+    Examples:
+        >>> http_request("https://api.github.com", "GET")
+        "✅ 响应 (200): {...}"
+    """
+    import httpx
+    import json as json_module
+    
+    try:
+        # 解析 headers
+        parsed_headers = {}
+        if headers:
+            try:
+                parsed_headers = json_module.loads(headers)
+            except:
+                return "❌ headers 格式错误，请使用 JSON 格式"
+        
+        # 解析 body
+        parsed_body = None
+        if body:
+            try:
+                parsed_body = json_module.loads(body)
+            except:
+                parsed_body = body  # 作为原始字符串
+        
+        # 发送请求
+        with httpx.Client(timeout=30.0) as client:
+            response = client.request(
+                method=method.upper(),
+                url=url,
+                headers=parsed_headers,
+                json=parsed_body if isinstance(parsed_body, dict) else None,
+                content=parsed_body if isinstance(parsed_body, str) else None,
+            )
+        
+        # 处理响应
+        status = response.status_code
+        content_type = response.headers.get("content-type", "")
+        
+        if "json" in content_type:
+            try:
+                result = json_module.dumps(response.json(), ensure_ascii=False, indent=2)
+            except:
+                result = response.text
+        else:
+            result = response.text
+        
+        # 截断过长的响应
+        if len(result) > 5000:
+            result = result[:5000] + "\n... (响应已截断)"
+        
+        return f"✅ HTTP {status}:\n```\n{result}\n```"
+    
+    except httpx.TimeoutException:
+        return f"❌ 请求超时: {url}"
+    except httpx.RequestError as e:
+        return f"❌ 请求错误: {str(e)}"
+    except Exception as e:
+        return f"❌ 错误: {str(e)}"
+
+
+@tool  
+def url_fetch(url: str) -> str:
+    """
+    获取网页内容（简化版）。
+    
+    自动处理编码，提取文本内容。
+    
+    Args:
+        url: 网页 URL
+    
+    Returns:
+        网页文本内容
+    """
+    import httpx
+    from html.parser import HTMLParser
+    
+    class TextExtractor(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.text_parts = []
+            self.skip_tags = {'script', 'style', 'head', 'title', 'meta', 'link'}
+            self.current_tag = None
+            
+        def handle_starttag(self, tag, attrs):
+            self.current_tag = tag
+            
+        def handle_endtag(self, tag):
+            self.current_tag = None
+            
+        def handle_data(self, data):
+            if self.current_tag not in self.skip_tags:
+                text = data.strip()
+                if text:
+                    self.text_parts.append(text)
+        
+        def get_text(self):
+            return '\n'.join(self.text_parts)
+    
+    try:
+        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+            response = client.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; ChatBot/1.0)"
+            })
+            response.raise_for_status()
+        
+        content_type = response.headers.get("content-type", "")
+        
+        if "html" in content_type:
+            parser = TextExtractor()
+            parser.feed(response.text)
+            text = parser.get_text()
+        else:
+            text = response.text
+        
+        # 截断
+        if len(text) > 10000:
+            text = text[:10000] + "\n... (内容已截断)"
+        
+        return f"📄 网页内容:\n{text}"
+    
+    except Exception as e:
+        return f"❌ 获取失败: {str(e)}"
+
+
+# ==================== 系统信息工具 ====================
+
+@tool
+def get_system_info() -> str:
+    """
+    获取系统基本信息。
+    
+    Returns:
+        系统信息摘要
+    """
+    import platform
+    
+    info = {
+        "系统": platform.system(),
+        "版本": platform.release(),
+        "架构": platform.machine(),
+        "Python": platform.python_version(),
+        "处理器": platform.processor() or "未知",
+    }
+    
+    result = "💻 系统信息:\n"
+    for key, value in info.items():
+        result += f"- {key}: {value}\n"
+    
+    return result
+
+
+# ==================== 扩展工具集合 ====================
+
+def get_extended_tools() -> List:
+    """
+    获取扩展工具集（包含 HTTP 和系统工具）
+    
+    Returns:
+        扩展工具列表
+    """
+    return [
+        # 基础工具
+        calculator,
+        get_current_time,
+        get_current_date,
+        word_count,
+        
+        # 文本工具
+        text_to_uppercase,
+        text_to_lowercase,
+        format_json,
+        validate_json,
+        
+        # 代码执行
+        run_python_code,
+        read_file_content,
+        
+        # HTTP 工具
+        http_request,
+        url_fetch,
+        
+        # 系统工具
+        get_system_info,
+    ]
