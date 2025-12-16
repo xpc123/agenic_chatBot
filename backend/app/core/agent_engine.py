@@ -527,6 +527,11 @@ class ExecutorAgent:
         # 运行时上下文
         runtime_context = context or AgentContext(session_id=session_id)
         
+        # 跟踪已处理的工具调用和结果，避免重复
+        seen_tool_calls = set()
+        seen_tool_results = set()
+        last_text_content = None
+        
         try:
             # 流式执行
             async for chunk in self.agent.astream(
@@ -542,37 +547,51 @@ class ExecutorAgent:
                 
                 last_message = messages[-1]
                 
-                # 处理工具调用
+                # 处理工具调用（去重）
                 if hasattr(last_message, "tool_calls") and last_message.tool_calls:
                     for tool_call in last_message.tool_calls:
+                        tool_call_id = tool_call.get("id", "")
+                        if tool_call_id and tool_call_id in seen_tool_calls:
+                            continue  # 跳过已处理的工具调用
+                        seen_tool_calls.add(tool_call_id)
+                        
                         yield {
                             "type": "tool_call",
                             "content": f"🔧 调用工具: {tool_call['name']}",
                             "metadata": {
                                 "tool": tool_call["name"],
-                                "args": tool_call.get("args", {})
+                                "args": tool_call.get("args", {}),
+                                "tool_call_id": tool_call_id
                             }
                         }
                 
-                # 处理工具结果
+                # 处理工具结果（去重）
                 elif isinstance(last_message, ToolMessage):
+                    tool_call_id = last_message.tool_call_id
+                    if tool_call_id in seen_tool_results:
+                        continue  # 跳过已处理的工具结果
+                    seen_tool_results.add(tool_call_id)
+                    
                     yield {
                         "type": "tool_result",
                         "content": f"✅ 工具结果",
                         "metadata": {
-                            "tool_call_id": last_message.tool_call_id,
+                            "tool_call_id": tool_call_id,
                             "result": last_message.content[:500]
                         }
                     }
                 
-                # 处理 AI 最终回复
+                # 处理 AI 最终回复（去重）
                 elif hasattr(last_message, "content") and last_message.content:
                     # 只有当没有工具调用时才是最终回复
                     if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
-                        yield {
-                            "type": "text",
-                            "content": last_message.content
-                        }
+                        # 避免重复发送相同内容
+                        if last_message.content != last_text_content:
+                            last_text_content = last_message.content
+                            yield {
+                                "type": "text",
+                                "content": last_message.content
+                            }
         
         except Exception as e:
             logger.error(f"Agent execution error: {e}")
