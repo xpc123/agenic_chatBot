@@ -10,6 +10,7 @@
 """
 import sys
 import os
+import json
 import asyncio
 from pathlib import Path
 from loguru import logger
@@ -134,15 +135,185 @@ class StandaloneGUI:
         
         logger.info("Setting up MCP servers...")
         
+        from app.models.tool import MCPServer
+        
         for server_config in self.config.context.mcp_servers:
             if not server_config.enabled:
+                logger.info(f"  Skipping disabled server: {server_config.name}")
                 continue
             
-            logger.info(f"  Registering server: {server_config.name}")
-            # 这里根据服务器类型注册MCP服务器
-            # 实际实现需要根据配置创建相应的MCP服务器实例
+            logger.info(f"  Registering server: {server_config.name} ({server_config.type})")
+            
+            try:
+                # 根据服务器类型创建配置
+                server_url = None
+                server_auth = None
+                
+                if server_config.type == "http":
+                    # HTTP 类型的 MCP 服务器
+                    base_url = server_config.config.get("base_url", "")
+                    server_url = base_url
+                    
+                    # 处理认证
+                    auth_config = server_config.config.get("auth", {})
+                    if auth_config:
+                        auth_type = auth_config.get("type", "")
+                        if auth_type == "bearer":
+                            token = auth_config.get("token", "")
+                            # 支持环境变量替换
+                            if token.startswith("${") and token.endswith("}"):
+                                env_var = token[2:-1]
+                                token = os.environ.get(env_var, "")
+                            server_auth = {"type": "bearer", "token": token}
+                        elif auth_type == "basic":
+                            server_auth = {
+                                "type": "basic",
+                                "username": auth_config.get("username", ""),
+                                "password": auth_config.get("password", ""),
+                            }
+                    
+                elif server_config.type == "sqlite":
+                    # SQLite 数据库作为 MCP 工具源
+                    db_path = server_config.config.get("database_path", "")
+                    # 对于 SQLite，我们创建一个内置的数据库工具
+                    logger.info(f"    Database path: {db_path}")
+                    # 注册数据库查询工具
+                    await self._register_sqlite_tools(server_config.name, db_path)
+                    continue  # SQLite 不需要注册为 MCP Server
+                    
+                elif server_config.type == "stdio":
+                    # STDIO 类型（命令行启动的 MCP 服务器）
+                    command = server_config.config.get("command", "")
+                    args = server_config.config.get("args", [])
+                    logger.info(f"    Command: {command} {' '.join(args)}")
+                    # STDIO 类型需要特殊处理，暂时跳过
+                    logger.warning(f"    STDIO type not fully supported yet")
+                    continue
+                
+                # 创建 MCPServer 实例
+                if server_url:
+                    mcp_server = MCPServer(
+                        name=server_config.name,
+                        url=server_url,
+                        description=server_config.config.get("description", f"{server_config.name} MCP Server"),
+                        enabled=True,
+                        auth=server_auth,
+                    )
+                    
+                    # 注册到 registry
+                    await mcp_registry.register_server(mcp_server)
+                    logger.info(f"    ✓ Server registered: {server_config.name}")
+                    
+            except Exception as e:
+                logger.error(f"    ✗ Failed to register {server_config.name}: {e}")
+        
+        # 输出注册的工具列表
+        all_tools = mcp_registry.list_tools()
+        if all_tools:
+            logger.info(f"  Registered {len(all_tools)} MCP tools:")
+            for tool in all_tools[:5]:  # 只显示前5个
+                logger.info(f"    - {tool.name}: {tool.description[:50]}...")
+            if len(all_tools) > 5:
+                logger.info(f"    ... and {len(all_tools) - 5} more")
         
         logger.info("✓ MCP servers ready")
+    
+    async def _register_sqlite_tools(self, server_name: str, db_path: str):
+        """注册 SQLite 数据库工具"""
+        from langchain.tools import tool
+        import sqlite3
+        
+        if not os.path.exists(db_path):
+            logger.warning(f"    Database not found: {db_path}")
+            return
+        
+        @tool
+        def query_database(query: str) -> str:
+            """
+            执行 SQL 查询并返回结果。
+            
+            Args:
+                query: SQL 查询语句（仅支持 SELECT）
+            
+            Returns:
+                查询结果的 JSON 格式
+            """
+            # 安全检查：只允许 SELECT 查询
+            query_upper = query.strip().upper()
+            if not query_upper.startswith("SELECT"):
+                return "错误：出于安全考虑，只允许 SELECT 查询"
+            
+            try:
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(query)
+                rows = cursor.fetchall()
+                conn.close()
+                
+                # 转换为字典列表
+                result = [dict(row) for row in rows]
+                return json.dumps(result, ensure_ascii=False, indent=2)
+            except Exception as e:
+                return f"查询错误: {str(e)}"
+        
+        @tool
+        def list_tables() -> str:
+            """
+            列出数据库中的所有表。
+            
+            Returns:
+                表名列表
+            """
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = [row[0] for row in cursor.fetchall()]
+                conn.close()
+                return json.dumps(tables, ensure_ascii=False)
+            except Exception as e:
+                return f"错误: {str(e)}"
+        
+        @tool
+        def describe_table(table_name: str) -> str:
+            """
+            获取表的结构信息。
+            
+            Args:
+                table_name: 表名
+            
+            Returns:
+                表结构信息
+            """
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                columns = cursor.fetchall()
+                conn.close()
+                
+                result = []
+                for col in columns:
+                    result.append({
+                        "name": col[1],
+                        "type": col[2],
+                        "nullable": not col[3],
+                        "primary_key": bool(col[5]),
+                    })
+                return json.dumps(result, ensure_ascii=False, indent=2)
+            except Exception as e:
+                return f"错误: {str(e)}"
+        
+        # 注册到工具注册表
+        from app.core.tool_registry import get_tool_registry, ToolPermission
+        
+        registry = get_tool_registry()
+        registry.register(query_database, permission=ToolPermission.PUBLIC, category="database")
+        registry.register(list_tables, permission=ToolPermission.PUBLIC, category="database")
+        registry.register(describe_table, permission=ToolPermission.PUBLIC, category="database")
+        
+        logger.info(f"    ✓ Registered 3 database tools for {server_name}")
     
     async def initialize(self):
         """初始化所有组件"""

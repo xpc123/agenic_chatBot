@@ -249,18 +249,56 @@ def search_web(query: str) -> str:
 
 
 @tool
-def search_knowledge_base(query: str) -> str:
+async def search_knowledge_base(query: str, top_k: int = 5) -> str:
     """
-    搜索内部知识库（模拟）。
+    搜索内部知识库。
+    
+    使用 RAG 系统检索与查询相关的文档内容。
     
     Args:
         query: 搜索查询
+        top_k: 返回结果数量（默认5条）
     
     Returns:
         知识库搜索结果
     """
-    # TODO: 实现 RAG 检索
-    return f"📚 知识库搜索 '{query}': 暂无结果。请确保已配置 RAG 知识库。"
+    try:
+        from ..rag import retriever
+        
+        # 执行检索
+        results = await retriever.retrieve(
+            query=query,
+            top_k=top_k,
+        )
+        
+        if not results:
+            return f"📚 知识库搜索 '{query}': 未找到相关结果。"
+        
+        # 格式化结果
+        output_parts = [f"📚 知识库搜索 '{query}' 找到 {len(results)} 条结果:\n"]
+        
+        for i, result in enumerate(results, 1):
+            content = result.get("content", "")
+            source = result.get("source", result.get("metadata", {}).get("source", "未知来源"))
+            score = result.get("score", 0)
+            citation = result.get("citation", "")
+            
+            # 截断过长内容
+            if len(content) > 500:
+                content = content[:500] + "..."
+            
+            output_parts.append(f"\n---\n**结果 {i}** (相似度: {score:.2f})")
+            if source:
+                output_parts.append(f"\n📄 来源: {source}")
+            if citation:
+                output_parts.append(f"\n🔗 引用: {citation}")
+            output_parts.append(f"\n\n{content}")
+        
+        return "".join(output_parts)
+        
+    except Exception as e:
+        logger.error(f"Knowledge base search failed: {e}")
+        return f"📚 知识库搜索出错: {str(e)}"
 
 
 # ==================== 带上下文的工具 ====================

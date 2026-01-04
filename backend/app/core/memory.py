@@ -129,11 +129,71 @@ class MemoryManager:
         Returns:
             相关记忆列表
         """
-        # TODO: 实现基于向量的语义搜索
-        # 可以使用与 RAG 相同的向量数据库
-        
         logger.debug(f"Retrieving long-term memory for: {query[:50]}")
-        return []
+        
+        try:
+            # 获取该会话的所有历史消息
+            all_messages = await self.get_conversation_history(session_id)
+            
+            if not all_messages:
+                return []
+            
+            # 使用 embedding 进行语义搜索
+            from ..rag.embeddings import embedding_generator
+            
+            # 生成查询向量
+            query_embedding = await embedding_generator.embed_text(query)
+            
+            # 为每条消息生成向量并计算相似度
+            results = []
+            for i, msg in enumerate(all_messages):
+                if not msg.content or len(msg.content.strip()) < 10:
+                    continue
+                
+                # 生成消息向量
+                msg_embedding = await embedding_generator.embed_text(msg.content)
+                
+                # 计算余弦相似度
+                similarity = self._cosine_similarity(query_embedding, msg_embedding)
+                
+                results.append({
+                    "index": i,
+                    "role": msg.role.value,
+                    "content": msg.content,
+                    "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
+                    "score": similarity,
+                })
+            
+            # 按相似度排序并返回 top_k
+            results.sort(key=lambda x: x["score"], reverse=True)
+            return results[:top_k]
+            
+        except Exception as e:
+            logger.error(f"Semantic search failed: {e}")
+            # 降级：返回最近的消息
+            messages = await self.get_conversation_history(session_id, max_messages=top_k)
+            return [
+                {
+                    "index": i,
+                    "role": msg.role.value,
+                    "content": msg.content,
+                    "score": 0.5,
+                }
+                for i, msg in enumerate(messages)
+            ]
+    
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """计算余弦相似度"""
+        import math
+        
+        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+        norm1 = math.sqrt(sum(a * a for a in vec1))
+        norm2 = math.sqrt(sum(b * b for b in vec2))
+        
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        
+        return dot_product / (norm1 * norm2)
     
     async def summarize_conversation(
         self,

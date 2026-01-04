@@ -3,11 +3,13 @@
 文档管理API路由
 """
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from loguru import logger
 import os
 import uuid
+import json
 from pathlib import Path
+from datetime import datetime
 
 from ..models.document import (
     DocumentUploadResponse,
@@ -18,6 +20,30 @@ from ..rag import retriever
 from ..config import settings
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+# 文档索引文件路径
+DOCUMENT_INDEX_FILE = os.path.join(settings.UPLOAD_DIR, ".document_index.json")
+
+
+def _load_document_index() -> Dict[str, Dict[str, Any]]:
+    """加载文档索引"""
+    if os.path.exists(DOCUMENT_INDEX_FILE):
+        try:
+            with open(DOCUMENT_INDEX_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load document index: {e}")
+    return {}
+
+
+def _save_document_index(index: Dict[str, Dict[str, Any]]) -> None:
+    """保存文档索引"""
+    try:
+        os.makedirs(os.path.dirname(DOCUMENT_INDEX_FILE), exist_ok=True)
+        with open(DOCUMENT_INDEX_FILE, 'w', encoding='utf-8') as f:
+            json.dump(index, f, ensure_ascii=False, indent=2, default=str)
+    except Exception as e:
+        logger.error(f"Failed to save document index: {e}")
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
@@ -72,6 +98,21 @@ async def upload_document(
         
         document = await retriever.add_document(file_path, metadata_dict)
         
+        # 更新文档索引
+        doc_index = _load_document_index()
+        doc_index[document.id] = {
+            "id": document.id,
+            "filename": document.filename,
+            "file_type": document.file_type,
+            "file_size": document.file_size,
+            "file_path": file_path,
+            "upload_time": datetime.now().isoformat(),
+            "processed": True,
+            "chunk_count": document.chunk_count,
+            "metadata": metadata_dict,
+        }
+        _save_document_index(doc_index)
+        
         logger.info(f"Document uploaded: {filename}")
         
         return DocumentUploadResponse(
@@ -116,24 +157,79 @@ async def search_documents(request: DocumentSearchRequest):
 
 
 @router.get("/list")
-async def list_documents():
+async def list_documents(
+    page: int = 1,
+    page_size: int = 20,
+    file_type: Optional[str] = None,
+):
     """
     列出所有文档
+    
+    Args:
+        page: 页码（从1开始）
+        page_size: 每页数量
+        file_type: 按文件类型过滤（如 .pdf, .md）
     
     Returns:
         文档列表
     """
     try:
-        # TODO: 实现文档列表查询
-        # 需要维护文档索引
+        # 加载文档索引
+        doc_index = _load_document_index()
+        
+        # 转换为列表
+        documents = list(doc_index.values())
+        
+        # 按文件类型过滤
+        if file_type:
+            documents = [d for d in documents if d.get("file_type") == file_type]
+        
+        # 按上传时间倒序排列
+        documents.sort(key=lambda x: x.get("upload_time", ""), reverse=True)
+        
+        # 分页
+        total = len(documents)
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_docs = documents[start:end]
         
         return {
-            "documents": [],
-            "count": 0,
+            "documents": paginated_docs,
+            "count": len(paginated_docs),
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
         }
         
     except Exception as e:
         logger.error(f"List error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}")
+async def get_document(document_id: str):
+    """
+    获取单个文档信息
+    
+    Args:
+        document_id: 文档ID
+    
+    Returns:
+        文档信息
+    """
+    try:
+        doc_index = _load_document_index()
+        
+        if document_id not in doc_index:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        
+        return doc_index[document_id]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get document error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -148,9 +244,22 @@ async def delete_document(document_id: str):
     try:
         from ..rag import vector_store
         
+        # 从向量库删除
         await vector_store.delete_document(document_id)
         
-        return {"message": "文档删除成功"}
+        # 从索引删除
+        doc_index = _load_document_index()
+        doc_info = doc_index.pop(document_id, None)
+        _save_document_index(doc_index)
+        
+        # 删除原文件
+        if doc_info and doc_info.get("file_path"):
+            file_path = doc_info["file_path"]
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info(f"Deleted file: {file_path}")
+        
+        return {"message": "文档删除成功", "document_id": document_id}
         
     except Exception as e:
         logger.error(f"Delete error: {e}")
