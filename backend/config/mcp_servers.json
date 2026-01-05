@@ -1,9 +1,9 @@
 {
   "servers": [
     {
-      "name": "example_tools",
-      "url": "http://localhost:3001",
-      "description": "示例工具服务器",
+      "name": "virtuoso-mcp",
+      "url": "http://shbjlnxade1:8080",
+      "description": "Virtuoso MCP Server - SKILL 代码执行",
       "enabled": true,
       "tools": []
     }
