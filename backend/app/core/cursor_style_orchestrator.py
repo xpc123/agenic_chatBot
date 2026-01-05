@@ -324,8 +324,9 @@ class CursorStyleOrchestrator:
         """构建完整上下文"""
         cm = ContextManager(max_tokens=self.max_context_tokens)
         
-        # 1. 用户偏好（风格提示）
-        if self.enable_preferences:
+        # 1. 用户偏好（风格提示）- 仅对非简单对话应用
+        # 对于简单对话（如问候），跳过详细偏好以加快响应
+        if self.enable_preferences and intent.task_type != TaskType.CONVERSATION:
             style_prompt = self.preference_manager.get_style_prompt(user_id)
             if style_prompt:
                 cm.add(
