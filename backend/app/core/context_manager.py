@@ -1,743 +1,555 @@
 # -*- coding: utf-8 -*-
 """
-上下文管理器 - Context Engineering
+上下文工程 - Context Engineering
 
-统一管理所有上下文来源:
-1. MCP Server 工具信息
-2. 路径引用 (@path)
-3. RAG 检索结果
-4. Skills 技能描述
-5. 对话历史
-6. 用户偏好
-7. 系统指令
+模仿 Cursor 的上下文管理能力：
+1. 统一上下文构建：将多源信息整合为结构化上下文
+2. 优先级排序：根据相关性对上下文排序
+3. Token 预算管理：在限制内最大化信息量
+4. 动态压缩：智能压缩过长内容
+5. 引用追踪：记录信息来源用于引用
+
+这是 Cursor 能够理解复杂项目的关键能力！
 """
-from typing import Dict, List, Any, Optional
-from loguru import logger
+from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass, field
 from enum import Enum
+from datetime import datetime
+from loguru import logger
+import json
+import tiktoken
+
+
+class ContextSource(Enum):
+    """上下文来源"""
+    USER_MESSAGE = "user_message"        # 用户消息
+    CONVERSATION = "conversation"        # 对话历史
+    RAG = "rag"                          # 知识库检索
+    FILE = "file"                        # 文件内容
+    MEMORY = "memory"                    # 长期记忆
+    TOOL_RESULT = "tool_result"          # 工具执行结果
+    SKILL = "skill"                      # 技能指令
+    SYSTEM = "system"                    # 系统信息
 
 
 class ContextPriority(Enum):
     """上下文优先级"""
-    CRITICAL = 1    # 系统指令、安全规则
-    HIGH = 2        # @路径引用、用户显式指定
-    MEDIUM = 3      # MCP工具、Skills、RAG结果
-    LOW = 4         # 对话历史、用户偏好
-    
+    CRITICAL = 1    # 必须包含
+    HIGH = 2        # 高优先级
+    MEDIUM = 3      # 中优先级
+    LOW = 4         # 低优先级
 
-class ContextSource:
-    """上下文来源"""
-    SYSTEM = "system"           # 系统指令
-    PATH_REFERENCE = "path"     # @路径引用
-    MCP_SERVER = "mcp"          # MCP Server 工具
-    RAG = "rag"                 # RAG 检索结果
-    SKILLS = "skills"           # Skills 技能
-    HISTORY = "history"         # 对话历史
-    PREFERENCES = "preferences" # 用户偏好
-    CUSTOM = "custom"           # 自定义上下文
+
+@dataclass
+class ContextBlock:
+    """
+    上下文块
+    
+    表示一个独立的上下文单元
+    """
+    id: str
+    source: ContextSource
+    content: str
+    priority: ContextPriority = ContextPriority.MEDIUM
+    
+    # 元信息
+    title: str = ""
+    citation: str = ""              # 引用标识
+    relevance_score: float = 0.0    # 相关性分数
+    
+    # Token 信息
+    token_count: int = 0
+    
+    # 时间戳
+    created_at: datetime = field(default_factory=datetime.now)
+    
+    # 额外数据
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_formatted(self) -> str:
+        """格式化为可读文本"""
+        lines = []
+        if self.title:
+            lines.append(f"### {self.title}")
+        if self.citation:
+            lines.append(f"*来源: {self.citation}*")
+        lines.append(self.content)
+        return "\n".join(lines)
+
+
+@dataclass 
+class ContextWindow:
+    """
+    上下文窗口
+    
+    管理 Token 预算和内容
+    """
+    max_tokens: int
+    blocks: List[ContextBlock] = field(default_factory=list)
+    
+    @property
+    def used_tokens(self) -> int:
+        return sum(b.token_count for b in self.blocks)
+    
+    @property
+    def remaining_tokens(self) -> int:
+        return self.max_tokens - self.used_tokens
+    
+    @property
+    def usage_percent(self) -> float:
+        return (self.used_tokens / self.max_tokens) * 100 if self.max_tokens > 0 else 0
 
 
 class ContextManager:
     """
-    统一上下文管理器 - 快速集成的核心
+    上下文管理器
     
-    负责:
-    1. 收集各种上下文来源（MCP、@引用、RAG、Skills等）
-    2. 按优先级自动排序
-    3. Token 预算自动控制
-    4. 构建最终上下文
-    
-    核心理念: **上下文即能力** - 产品方只需关注提供什么上下文，就能获得相应的 AI 能力
-    
-    使用示例:
-    ```python
-    # 基础用法
-    ctx = ContextManager(max_tokens=8000)
-    ctx.add_mcp_tools(tools)
-    ctx.add_path_references(references)
-    ctx.add_rag_results(results)
-    unified_context = ctx.build()
-    
-    # 链式调用（推荐）
-    ctx = (ContextManager(max_tokens=8000)
-           .add_custom("current_file", file_content, priority=ContextPriority.HIGH)
-           .add_custom("project_structure", tree, priority=ContextPriority.MEDIUM)
-           .add_rag_results(knowledge_base))
-    unified_context = ctx.build()
-    
-    # 快速集成 - IDE 产品示例
-    ctx = ContextManager.for_ide(
-        workspace_path="/path/to/project",
-        current_file="src/main.py",
-        diagnostics=lsp_errors
-    )
-    ```
+    核心能力：
+    1. 收集多源上下文
+    2. 优先级排序
+    3. Token 预算管理
+    4. 智能压缩
+    5. 统一格式输出
     """
+    
+    # 默认配置
+    DEFAULT_MAX_TOKENS = 8000
+    COMPRESSION_THRESHOLD = 0.9  # 90% 时开始压缩
+    
+    # 各来源的默认优先级
+    SOURCE_PRIORITIES = {
+        ContextSource.USER_MESSAGE: ContextPriority.CRITICAL,
+        ContextSource.SKILL: ContextPriority.HIGH,
+        ContextSource.RAG: ContextPriority.HIGH,
+        ContextSource.FILE: ContextPriority.HIGH,
+        ContextSource.CONVERSATION: ContextPriority.MEDIUM,
+        ContextSource.MEMORY: ContextPriority.MEDIUM,
+        ContextSource.TOOL_RESULT: ContextPriority.MEDIUM,
+        ContextSource.SYSTEM: ContextPriority.LOW,
+    }
     
     def __init__(
         self,
-        max_tokens: int = 8000,
-        reserve_tokens: int = 2000,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        model: str = "gpt-4",
     ):
         """
         初始化上下文管理器
         
         Args:
             max_tokens: 最大 Token 数
-            reserve_tokens: 预留 Token 数（用于响应）
+            model: 用于 Token 计算的模型
         """
         self.max_tokens = max_tokens
-        self.reserve_tokens = reserve_tokens
-        self.available_tokens = max_tokens - reserve_tokens
+        self.model = model
         
-        # 上下文存储（按来源分类）
-        self.contexts: Dict[str, Dict[str, Any]] = {
-            ContextSource.SYSTEM: {"data": None, "priority": ContextPriority.CRITICAL},
-            ContextSource.PATH_REFERENCE: {"data": None, "priority": ContextPriority.HIGH},
-            ContextSource.MCP_SERVER: {"data": None, "priority": ContextPriority.MEDIUM},
-            ContextSource.RAG: {"data": None, "priority": ContextPriority.MEDIUM},
-            ContextSource.SKILLS: {"data": None, "priority": ContextPriority.MEDIUM},
-            ContextSource.HISTORY: {"data": None, "priority": ContextPriority.LOW},
-            ContextSource.PREFERENCES: {"data": None, "priority": ContextPriority.LOW},
-            ContextSource.CUSTOM: {"data": None, "priority": ContextPriority.LOW},
-        }
+        # Token 计数器
+        try:
+            self.encoding = tiktoken.encoding_for_model(model)
+        except Exception:
+            self.encoding = tiktoken.get_encoding("cl100k_base")
         
-        # 统计信息
-        self.stats = {
-            "system_instructions": False,
-            "path_references_count": 0,
-            "mcp_tools_count": 0,
-            "mcp_servers_count": 0,
-            "rag_results_count": 0,
-            "skills_count": 0,
-            "history_messages_count": 0,
-            "has_preferences": False,
-            "custom_contexts_count": 0,
-        }
+        # 上下文收集器
+        self.blocks: List[ContextBlock] = []
         
-        logger.debug(f"ContextManager initialized: max_tokens={max_tokens}, reserve={reserve_tokens}")
+        logger.info(f"ContextManager initialized with {max_tokens} tokens")
     
-    # ==================== 添加上下文方法 ====================
+    def count_tokens(self, text: str) -> int:
+        """计算 Token 数"""
+        try:
+            return len(self.encoding.encode(text))
+        except Exception:
+            # 降级：估算
+            return len(text) // 4
     
-    def add_system_instructions(self, instructions: str) -> "ContextManager":
+    def add(
+        self,
+        content: str,
+        source: ContextSource,
+        priority: Optional[ContextPriority] = None,
+        title: str = "",
+        citation: str = "",
+        relevance_score: float = 0.0,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ContextBlock:
         """
-        添加系统指令（最高优先级）
+        添加上下文块
         
         Args:
-            instructions: 系统指令文本
+            content: 内容
+            source: 来源
+            priority: 优先级（None 则使用来源默认值）
+            title: 标题
+            citation: 引用标识
+            relevance_score: 相关性分数
+            metadata: 额外元数据
         
         Returns:
-            self (支持链式调用)
+            创建的上下文块
         """
-        self.contexts[ContextSource.SYSTEM]["data"] = instructions
-        self.stats["system_instructions"] = True
-        logger.debug("System instructions added")
-        return self
+        if priority is None:
+            priority = self.SOURCE_PRIORITIES.get(source, ContextPriority.MEDIUM)
+        
+        block = ContextBlock(
+            id=f"{source.value}_{len(self.blocks)}",
+            source=source,
+            content=content,
+            priority=priority,
+            title=title,
+            citation=citation,
+            relevance_score=relevance_score,
+            token_count=self.count_tokens(content),
+            metadata=metadata or {},
+        )
+        
+        self.blocks.append(block)
+        logger.debug(f"Added context block: {block.id} ({block.token_count} tokens)")
+        
+        return block
     
-    def add_path_references(self, references: Dict[str, Any]) -> "ContextManager":
+    def add_user_message(self, message: str) -> ContextBlock:
+        """添加用户消息"""
+        return self.add(
+            content=message,
+            source=ContextSource.USER_MESSAGE,
+            title="用户消息",
+            priority=ContextPriority.CRITICAL,
+        )
+    
+    def add_conversation_history(
+        self,
+        messages: List[Dict[str, str]],
+        max_messages: int = 10,
+    ) -> List[ContextBlock]:
+        """添加对话历史"""
+        blocks = []
+        
+        # 取最近的消息
+        recent = messages[-max_messages:] if len(messages) > max_messages else messages
+        
+        for i, msg in enumerate(recent):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            
+            block = self.add(
+                content=f"{role}: {content}",
+                source=ContextSource.CONVERSATION,
+                title=f"对话 #{len(messages) - len(recent) + i + 1}",
+                priority=ContextPriority.MEDIUM,
+                relevance_score=0.5 + (i * 0.05),  # 越新越相关
+            )
+            blocks.append(block)
+        
+        return blocks
+    
+    def add_rag_results(
+        self,
+        results: List[Dict[str, Any]],
+        max_results: int = 5,
+    ) -> List[ContextBlock]:
+        """添加 RAG 检索结果"""
+        blocks = []
+        
+        for i, result in enumerate(results[:max_results]):
+            content = result.get("content", "")
+            source = result.get("source", result.get("metadata", {}).get("source", "未知来源"))
+            score = result.get("score", 0.0)
+            
+            block = self.add(
+                content=content,
+                source=ContextSource.RAG,
+                title=f"知识库结果 #{i+1}",
+                citation=source,
+                relevance_score=score,
+                priority=ContextPriority.HIGH,
+                metadata=result.get("metadata", {}),
+            )
+            blocks.append(block)
+        
+        return blocks
+    
+    def add_file_content(
+        self,
+        path: str,
+        content: str,
+        relevance_score: float = 0.8,
+    ) -> ContextBlock:
+        """添加文件内容"""
+        return self.add(
+            content=content,
+            source=ContextSource.FILE,
+            title=f"文件: {path}",
+            citation=path,
+            relevance_score=relevance_score,
+            priority=ContextPriority.HIGH,
+        )
+    
+    def add_skill_instructions(
+        self,
+        skill_name: str,
+        instructions: str,
+        examples: Optional[List[str]] = None,
+    ) -> ContextBlock:
+        """添加技能指令"""
+        content_parts = [instructions]
+        if examples:
+            content_parts.append("\n**示例:**")
+            for ex in examples[:3]:
+                content_parts.append(f"- {ex}")
+        
+        return self.add(
+            content="\n".join(content_parts),
+            source=ContextSource.SKILL,
+            title=f"技能: {skill_name}",
+            priority=ContextPriority.HIGH,
+        )
+    
+    def add_memory(
+        self,
+        memories: List[Dict[str, Any]],
+    ) -> List[ContextBlock]:
+        """添加长期记忆"""
+        blocks = []
+        
+        for mem in memories:
+            content = mem.get("content", "")
+            score = mem.get("score", 0.5)
+            
+            block = self.add(
+                content=content,
+                source=ContextSource.MEMORY,
+                title="相关记忆",
+                relevance_score=score,
+                priority=ContextPriority.MEDIUM,
+            )
+            blocks.append(block)
+        
+        return blocks
+    
+    def add_tool_result(
+        self,
+        tool_name: str,
+        result: str,
+    ) -> ContextBlock:
+        """添加工具执行结果"""
+        return self.add(
+            content=result,
+            source=ContextSource.TOOL_RESULT,
+            title=f"工具结果: {tool_name}",
+            priority=ContextPriority.MEDIUM,
+        )
+    
+    def build(
+        self,
+        compress_if_needed: bool = True,
+    ) -> str:
         """
-        添加 @路径引用上下文
+        构建最终上下文
         
         Args:
-            references: 路径引用数据，包含 contexts, formatted 等
-        
-        Returns:
-            self (支持链式调用)
-        """
-        self.contexts[ContextSource.PATH_REFERENCE]["data"] = references
-        self.stats["path_references_count"] = references.get("references_count", 0)
-        logger.debug(f"Path references added: {self.stats['path_references_count']} refs")
-        return self
-    
-    def add_mcp_tools(
-        self, 
-        tools: List[Any], 
-        servers: Optional[List[Any]] = None
-    ) -> "ContextManager":
-        """
-        添加 MCP Server 工具信息
-        
-        Args:
-            tools: MCP 工具列表
-            servers: MCP 服务器列表（可选）
-        
-        Returns:
-            self (支持链式调用)
-        """
-        self.contexts[ContextSource.MCP_SERVER]["data"] = {
-            "tools": tools,
-            "servers": servers or [],
-        }
-        self.stats["mcp_tools_count"] = len(tools)
-        self.stats["mcp_servers_count"] = len(servers) if servers else 0
-        logger.debug(f"MCP tools added: {len(tools)} tools from {self.stats['mcp_servers_count']} servers")
-        return self
-    
-    def add_rag_results(self, results: List[Dict[str, Any]]) -> "ContextManager":
-        """
-        添加 RAG 检索结果
-        
-        Args:
-            results: RAG 检索结果列表
-        
-        Returns:
-            self (支持链式调用)
-        """
-        self.contexts[ContextSource.RAG]["data"] = results
-        self.stats["rag_results_count"] = len(results)
-        logger.debug(f"RAG results added: {len(results)} documents")
-        return self
-    
-    def add_skills(self, skills: List[Dict[str, Any]]) -> "ContextManager":
-        """
-        添加 Skills 技能描述
-        
-        Args:
-            skills: 技能列表，每个技能包含 name, description, examples 等
-        
-        Returns:
-            self (支持链式调用)
-        """
-        self.contexts[ContextSource.SKILLS]["data"] = skills
-        self.stats["skills_count"] = len(skills)
-        logger.debug(f"Skills added: {len(skills)} skills")
-        return self
-    
-    def add_conversation_history(self, history: List[Dict[str, str]]) -> "ContextManager":
-        """
-        添加对话历史
-        
-        Args:
-            history: 对话历史列表
-        
-        Returns:
-            self (支持链式调用)
-        """
-        self.contexts[ContextSource.HISTORY]["data"] = history
-        self.stats["history_messages_count"] = len(history)
-        logger.debug(f"Conversation history added: {len(history)} messages")
-        return self
-    
-    def add_user_preferences(self, preferences: Dict[str, Any]) -> "ContextManager":
-        """
-        添加用户偏好
-        
-        Args:
-            preferences: 用户偏好字典
-        
-        Returns:
-            self (支持链式调用)
-        """
-        self.contexts[ContextSource.PREFERENCES]["data"] = preferences
-        self.stats["has_preferences"] = True
-        logger.debug("User preferences added")
-        return self
-    
-    def add_custom_context(
-        self, 
-        name: str, 
-        content: str, 
-        priority: ContextPriority = ContextPriority.MEDIUM
-    ) -> "ContextManager":
-        """
-        添加自定义上下文
-        
-        Args:
-            name: 上下文名称
-            content: 上下文内容
-            priority: 优先级
-        
-        Returns:
-            self (支持链式调用)
-        """
-        if self.contexts[ContextSource.CUSTOM]["data"] is None:
-            self.contexts[ContextSource.CUSTOM]["data"] = []
-        
-        self.contexts[ContextSource.CUSTOM]["data"].append({
-            "name": name,
-            "content": content,
-            "priority": priority,
-        })
-        self.stats["custom_contexts_count"] += 1
-        logger.debug(f"Custom context added: {name}")
-        return self
-    
-    # ==================== 构建上下文 ====================
-    
-    def build(self) -> str:
-        """
-        构建统一上下文
-        
-        按优先级组装:
-        1. 系统指令 (CRITICAL)
-        2. @路径引用 (HIGH)
-        3. MCP 工具 (MEDIUM)
-        4. Skills (MEDIUM)
-        5. RAG 结果 (MEDIUM)
-        6. 用户偏好 (LOW)
-        7. 自定义上下文 (按各自优先级)
-        
-        注意：对话历史通常由 Agent 的 memory 管理，不在这里添加
+            compress_if_needed: 超出预算时是否压缩
         
         Returns:
             格式化的上下文字符串
         """
-        parts = []
-        current_tokens = 0
-        
-        # 1. 系统指令 (CRITICAL)
-        system_data = self.contexts[ContextSource.SYSTEM]["data"]
-        if system_data:
-            parts.append(f"## 系统指令\n{system_data}")
-            current_tokens += self.estimate_tokens(system_data)
-        
-        # 2. @路径引用 (HIGH) - 用户显式指定，高优先级
-        path_data = self.contexts[ContextSource.PATH_REFERENCE]["data"]
-        if path_data:
-            formatted = path_data.get("formatted", "")
-            if formatted:
-                parts.append(f"## 引用的文件内容\n{formatted}")
-                current_tokens += self.estimate_tokens(formatted)
-        
-        # 3. MCP 工具 (MEDIUM)
-        mcp_data = self.contexts[ContextSource.MCP_SERVER]["data"]
-        if mcp_data:
-            mcp_text = self._format_mcp_tools(mcp_data)
-            if mcp_text and current_tokens + self.estimate_tokens(mcp_text) <= self.available_tokens:
-                parts.append(f"## 可用工具 (MCP)\n{mcp_text}")
-                current_tokens += self.estimate_tokens(mcp_text)
-        
-        # 4. Skills (MEDIUM)
-        skills_data = self.contexts[ContextSource.SKILLS]["data"]
-        if skills_data:
-            skills_text = self._format_skills(skills_data)
-            if skills_text and current_tokens + self.estimate_tokens(skills_text) <= self.available_tokens:
-                parts.append(f"## 可用技能\n{skills_text}")
-                current_tokens += self.estimate_tokens(skills_text)
-        
-        # 5. RAG 结果 (MEDIUM)
-        rag_data = self.contexts[ContextSource.RAG]["data"]
-        if rag_data:
-            rag_text = self._format_rag_results(rag_data)
-            if rag_text and current_tokens + self.estimate_tokens(rag_text) <= self.available_tokens:
-                parts.append(f"## 相关知识\n{rag_text}")
-                current_tokens += self.estimate_tokens(rag_text)
-        
-        # 6. 用户偏好 (LOW)
-        pref_data = self.contexts[ContextSource.PREFERENCES]["data"]
-        if pref_data:
-            pref_text = self._format_preferences(pref_data)
-            if pref_text and current_tokens + self.estimate_tokens(pref_text) <= self.available_tokens:
-                parts.append(f"## 用户偏好\n{pref_text}")
-                current_tokens += self.estimate_tokens(pref_text)
-        
-        # 7. 自定义上下文
-        custom_data = self.contexts[ContextSource.CUSTOM]["data"]
-        if custom_data:
-            for ctx in sorted(custom_data, key=lambda x: x["priority"].value):
-                ctx_text = f"### {ctx['name']}\n{ctx['content']}"
-                if current_tokens + self.estimate_tokens(ctx_text) <= self.available_tokens:
-                    parts.append(ctx_text)
-                    current_tokens += self.estimate_tokens(ctx_text)
-        
-        if not parts:
-            return ""
-        
-        result = "\n\n".join(parts)
-        logger.info(f"Context built: {current_tokens} tokens, {len(parts)} sections")
-        return result
-    
-    # ==================== 格式化方法 ====================
-    
-    def _format_mcp_tools(self, mcp_data: Dict[str, Any]) -> str:
-        """格式化 MCP 工具信息"""
-        tools = mcp_data.get("tools", [])
-        servers = mcp_data.get("servers", [])
-        
-        if not tools:
-            return ""
-        
-        lines = []
-        
-        # 服务器信息
-        if servers:
-            server_names = [s.name if hasattr(s, 'name') else str(s) for s in servers]
-            lines.append(f"已连接服务器: {', '.join(server_names)}")
-            lines.append("")
-        
-        # 工具列表
-        lines.append("可用工具:")
-        for tool in tools:
-            name = tool.name if hasattr(tool, 'name') else tool.get('name', 'unknown')
-            desc = tool.description if hasattr(tool, 'description') else tool.get('description', '')
-            server = tool.server_name if hasattr(tool, 'server_name') else tool.get('server_name', '')
-            
-            if server:
-                lines.append(f"- **{name}** ({server}): {desc}")
-            else:
-                lines.append(f"- **{name}**: {desc}")
-        
-        return "\n".join(lines)
-    
-    def _format_skills(self, skills: List[Dict[str, Any]]) -> str:
-        """格式化 Skills 技能描述"""
-        if not skills:
-            return ""
-        
-        lines = []
-        for skill in skills:
-            name = skill.get("name", "unknown")
-            desc = skill.get("description", "")
-            examples = skill.get("examples", [])
-            
-            lines.append(f"### {name}")
-            if desc:
-                lines.append(desc)
-            if examples:
-                lines.append("示例:")
-                for ex in examples[:3]:  # 最多3个示例
-                    lines.append(f"  - {ex}")
-            lines.append("")
-        
-        return "\n".join(lines)
-    
-    def _format_rag_results(self, results: List[Dict[str, Any]]) -> str:
-        """格式化 RAG 结果"""
-        if not results:
-            return ""
-        
-        parts = []
-        for i, result in enumerate(results, 1):
-            content = result.get("content", "")
-            source = result.get("source", "unknown")
-            score = result.get("score", 0)
-            
-            if isinstance(score, (int, float)):
-                parts.append(f"### 来源 {i}: {source} (相关度: {score:.2f})\n{content}")
-            else:
-                parts.append(f"### 来源 {i}: {source}\n{content}")
-        
-        return "\n\n".join(parts)
-    
-    def _format_preferences(self, preferences: Dict[str, Any]) -> str:
-        """格式化用户偏好"""
-        if not preferences:
-            return ""
-        
-        lines = []
-        for key, value in preferences.items():
-            lines.append(f"- {key}: {value}")
-        return "\n".join(lines)
-    
-    # ==================== 工具方法 ====================
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """
-        获取统计信息
-        
-        Returns:
-            统计字典
-        """
-        total_items = (
-            (1 if self.stats["system_instructions"] else 0) +
-            self.stats["path_references_count"] +
-            self.stats["mcp_tools_count"] +
-            self.stats["rag_results_count"] +
-            self.stats["skills_count"] +
-            self.stats["history_messages_count"] +
-            (1 if self.stats["has_preferences"] else 0) +
-            self.stats["custom_contexts_count"]
+        # 1. 按优先级和相关性排序
+        sorted_blocks = sorted(
+            self.blocks,
+            key=lambda b: (b.priority.value, -b.relevance_score),
         )
         
-        return {
-            **self.stats,
-            "total_items": total_items,
-            "max_tokens": self.max_tokens,
-            "available_tokens": self.available_tokens,
-            "utilization_percent": f"{(total_items / max(1, self.max_tokens)) * 100:.1f}%",
-        }
-    
-    def estimate_tokens(self, text: str) -> int:
-        """
-        估算文本的 Token 数
+        # 2. 选择在预算内的块
+        selected = []
+        used_tokens = 0
         
-        简单估算：中文约 2 字符/token，英文约 4 字符/token
-        混合内容取平均值约 3 字符/token
-        """
-        if not text:
-            return 0
-        return len(text) // 3
-    
-    def clear(self) -> None:
-        """清空所有上下文"""
-        for source in self.contexts:
-            self.contexts[source]["data"] = None
+        for block in sorted_blocks:
+            if used_tokens + block.token_count <= self.max_tokens:
+                selected.append(block)
+                used_tokens += block.token_count
+            elif block.priority == ContextPriority.CRITICAL:
+                # 必须包含的内容，尝试压缩
+                if compress_if_needed:
+                    compressed = self._compress_block(block, self.max_tokens - used_tokens)
+                    if compressed:
+                        selected.append(compressed)
+                        used_tokens += compressed.token_count
         
-        self.stats = {
-            "system_instructions": False,
-            "path_references_count": 0,
-            "mcp_tools_count": 0,
-            "mcp_servers_count": 0,
-            "rag_results_count": 0,
-            "skills_count": 0,
-            "history_messages_count": 0,
-            "has_preferences": False,
-            "custom_contexts_count": 0,
-        }
-        logger.debug("ContextManager cleared")
-    
-    def get_context_sources(self) -> List[str]:
-        """
-        获取当前已添加的上下文来源列表
+        # 3. 按来源分组
+        grouped = self._group_by_source(selected)
         
-        Returns:
-            来源名称列表
-        """
-        sources = []
-        for source, ctx in self.contexts.items():
-            if ctx["data"] is not None:
-                sources.append(source)
-        return sources
-    
-    # ==================== 便捷工厂方法 ====================
-    
-    @classmethod
-    def for_ide(
-        cls,
-        workspace_path: Optional[str] = None,
-        current_file: Optional[str] = None,
-        diagnostics: Optional[List[Dict]] = None,
-        git_info: Optional[Dict] = None,
-        max_tokens: int = 8000,
-    ) -> "ContextManager":
-        """
-        IDE/代码编辑器产品的快速集成模板
+        # 4. 格式化输出
+        output_parts = []
         
-        Args:
-            workspace_path: 工作空间路径
-            current_file: 当前打开的文件路径
-            diagnostics: LSP 诊断信息（错误、警告等）
-            git_info: Git 状态信息
-            max_tokens: Token 限制
-        
-        Returns:
-            配置好的 ContextManager 实例
-        
-        示例:
-            ```python
-            ctx = ContextManager.for_ide(
-                workspace_path="/project",
-                current_file="src/main.py",
-                diagnostics=[{"line": 10, "message": "undefined variable"}]
-            )
-            ```
-        """
-        ctx = cls(max_tokens=max_tokens)
-        
-        if workspace_path:
-            ctx.add_custom(
-                "workspace_info",
-                f"工作空间路径: {workspace_path}",
-                priority=ContextPriority.MEDIUM
-            )
-        
-        if current_file:
-            ctx.add_custom(
-                "current_file",
-                f"当前文件: {current_file}",
-                priority=ContextPriority.HIGH
-            )
-        
-        if diagnostics:
-            diagnostics_text = "\n".join([
-                f"- 行 {d.get('line', '?')}: {d.get('message', '')}"
-                for d in diagnostics
-            ])
-            ctx.add_custom(
-                "diagnostics",
-                f"代码诊断信息:\n{diagnostics_text}",
-                priority=ContextPriority.HIGH
-            )
-        
-        if git_info:
-            git_text = f"Git 分支: {git_info.get('branch', 'unknown')}"
-            if git_info.get('modified_files'):
-                git_text += f"\n修改的文件: {', '.join(git_info['modified_files'])}"
-            ctx.add_custom(
-                "git_status",
-                git_text,
-                priority=ContextPriority.LOW
-            )
-        
-        return ctx
-    
-    @classmethod
-    def for_data_analysis(
-        cls,
-        dataframe_info: Optional[Dict] = None,
-        query_history: Optional[List[str]] = None,
-        visualization_context: Optional[str] = None,
-        max_tokens: int = 8000,
-    ) -> "ContextManager":
-        """
-        数据分析工具的快速集成模板
-        
-        Args:
-            dataframe_info: DataFrame 元信息（schema, shape 等）
-            query_history: 查询历史
-            visualization_context: 当前可视化上下文
-            max_tokens: Token 限制
-        
-        Returns:
-            配置好的 ContextManager 实例
-        
-        示例:
-            ```python
-            ctx = ContextManager.for_data_analysis(
-                dataframe_info={
-                    "shape": (1000, 10),
-                    "columns": ["id", "name", "age"],
-                    "dtypes": {"id": "int", "name": "str"}
-                },
-                query_history=["SELECT * FROM users", "..."]
-            )
-            ```
-        """
-        ctx = cls(max_tokens=max_tokens)
-        
-        if dataframe_info:
-            info_text = []
-            if dataframe_info.get('shape'):
-                info_text.append(f"数据形状: {dataframe_info['shape']}")
-            if dataframe_info.get('columns'):
-                info_text.append(f"列名: {', '.join(dataframe_info['columns'])}")
-            if dataframe_info.get('dtypes'):
-                dtype_text = ', '.join([f"{k}: {v}" for k, v in dataframe_info['dtypes'].items()])
-                info_text.append(f"数据类型: {dtype_text}")
+        for source, blocks in grouped.items():
+            if not blocks:
+                continue
             
-            ctx.add_custom(
-                "dataframe_info",
-                "\n".join(info_text),
-                priority=ContextPriority.HIGH
-            )
+            section_title = self._get_section_title(source)
+            output_parts.append(f"## {section_title}\n")
+            
+            for block in blocks:
+                output_parts.append(block.to_formatted())
+                output_parts.append("")
         
-        if query_history:
-            history_text = "\n".join([f"{i+1}. {q}" for i, q in enumerate(query_history[-5:])])
-            ctx.add_custom(
-                "query_history",
-                f"最近的查询:\n{history_text}",
-                priority=ContextPriority.LOW
-            )
+        result = "\n".join(output_parts)
         
-        if visualization_context:
-            ctx.add_custom(
-                "visualization",
-                visualization_context,
-                priority=ContextPriority.MEDIUM
-            )
+        logger.info(f"Built context: {used_tokens} tokens, {len(selected)} blocks")
         
-        return ctx
+        return result
     
-    @classmethod
-    def for_customer_service(
-        cls,
-        user_profile: Optional[Dict] = None,
-        order_history: Optional[List[Dict]] = None,
-        knowledge_base: Optional[List[Dict]] = None,
-        max_tokens: int = 8000,
-    ) -> "ContextManager":
-        """
-        客服系统的快速集成模板
+    def _group_by_source(
+        self,
+        blocks: List[ContextBlock],
+    ) -> Dict[ContextSource, List[ContextBlock]]:
+        """按来源分组"""
+        grouped = {}
         
-        Args:
-            user_profile: 用户资料
-            order_history: 订单历史
-            knowledge_base: 知识库内容
-            max_tokens: Token 限制
+        # 定义来源顺序
+        source_order = [
+            ContextSource.SKILL,
+            ContextSource.RAG,
+            ContextSource.FILE,
+            ContextSource.MEMORY,
+            ContextSource.CONVERSATION,
+            ContextSource.TOOL_RESULT,
+            ContextSource.SYSTEM,
+        ]
         
-        Returns:
-            配置好的 ContextManager 实例
+        for source in source_order:
+            grouped[source] = [b for b in blocks if b.source == source]
         
-        示例:
-            ```python
-            ctx = ContextManager.for_customer_service(
-                user_profile={"id": "123", "vip_level": "gold"},
-                order_history=[{"id": "O001", "status": "shipped"}]
-            )
-            ```
-        """
-        ctx = cls(max_tokens=max_tokens)
-        
-        if user_profile:
-            profile_text = "\n".join([f"- {k}: {v}" for k, v in user_profile.items()])
-            ctx.add_custom(
-                "user_profile",
-                f"用户信息:\n{profile_text}",
-                priority=ContextPriority.HIGH
-            )
-        
-        if order_history:
-            orders_text = "\n".join([
-                f"- 订单 {o.get('id', '?')}: {o.get('status', 'unknown')}"
-                for o in order_history[-10:]  # 最近10个订单
-            ])
-            ctx.add_custom(
-                "order_history",
-                f"订单历史:\n{orders_text}",
-                priority=ContextPriority.MEDIUM
-            )
-        
-        if knowledge_base:
-            ctx.add_rag_results(knowledge_base)
-        
-        return ctx
+        return grouped
     
-    @classmethod
-    def for_document_editor(
-        cls,
-        document_metadata: Optional[Dict] = None,
-        current_selection: Optional[str] = None,
-        writing_style: Optional[str] = None,
-        max_tokens: int = 8000,
-    ) -> "ContextManager":
-        """
-        文档编辑器的快速集成模板
+    def _get_section_title(self, source: ContextSource) -> str:
+        """获取来源的章节标题"""
+        titles = {
+            ContextSource.SKILL: "📋 任务指令",
+            ContextSource.RAG: "📚 知识库参考",
+            ContextSource.FILE: "📄 相关文件",
+            ContextSource.MEMORY: "💭 相关记忆",
+            ContextSource.CONVERSATION: "💬 对话历史",
+            ContextSource.TOOL_RESULT: "🔧 工具结果",
+            ContextSource.SYSTEM: "ℹ️ 系统信息",
+        }
+        return titles.get(source, source.value)
+    
+    def _compress_block(
+        self,
+        block: ContextBlock,
+        target_tokens: int,
+    ) -> Optional[ContextBlock]:
+        """压缩上下文块"""
+        if target_tokens <= 50:
+            return None
         
-        Args:
-            document_metadata: 文档元数据（标题、作者、标签等）
-            current_selection: 当前选中的文本
-            writing_style: 写作风格偏好
-            max_tokens: Token 限制
+        content = block.content
+        current_tokens = block.token_count
         
-        Returns:
-            配置好的 ContextManager 实例
-        
-        示例:
-            ```python
-            ctx = ContextManager.for_document_editor(
-                document_metadata={"title": "产品文档", "author": "张三"},
-                current_selection="这段文字需要润色",
-                writing_style="正式、专业"
+        # 简单截断
+        if current_tokens > target_tokens:
+            # 估算保留比例
+            ratio = target_tokens / current_tokens
+            keep_chars = int(len(content) * ratio * 0.9)  # 留10%余量
+            
+            compressed_content = content[:keep_chars] + "\n...(内容已压缩)"
+            
+            return ContextBlock(
+                id=block.id + "_compressed",
+                source=block.source,
+                content=compressed_content,
+                priority=block.priority,
+                title=block.title,
+                citation=block.citation,
+                relevance_score=block.relevance_score,
+                token_count=self.count_tokens(compressed_content),
+                metadata=block.metadata,
             )
-            ```
-        """
-        ctx = cls(max_tokens=max_tokens)
         
-        if document_metadata:
-            metadata_text = "\n".join([f"- {k}: {v}" for k, v in document_metadata.items()])
-            ctx.add_custom(
-                "document_metadata",
-                f"文档信息:\n{metadata_text}",
-                priority=ContextPriority.MEDIUM
-            )
+        return block
+    
+    def get_citations(self) -> List[Dict[str, str]]:
+        """获取所有引用"""
+        citations = []
         
-        if current_selection:
-            ctx.add_custom(
-                "current_selection",
-                f"选中的内容:\n{current_selection}",
-                priority=ContextPriority.HIGH
-            )
+        for block in self.blocks:
+            if block.citation:
+                citations.append({
+                    "id": block.id,
+                    "source": block.source.value,
+                    "citation": block.citation,
+                })
         
-        if writing_style:
-            ctx.add_user_preferences({"writing_style": writing_style})
+        return citations
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        by_source = {}
+        for block in self.blocks:
+            source = block.source.value
+            if source not in by_source:
+                by_source[source] = {"count": 0, "tokens": 0}
+            by_source[source]["count"] += 1
+            by_source[source]["tokens"] += block.token_count
         
-        return ctx
+        return {
+            "total_blocks": len(self.blocks),
+            "total_tokens": sum(b.token_count for b in self.blocks),
+            "max_tokens": self.max_tokens,
+            "by_source": by_source,
+        }
+    
+    def clear(self):
+        """清除所有上下文"""
+        self.blocks.clear()
+        logger.debug("Context cleared")
+
+
+# 便捷函数：快速构建上下文
+def build_context(
+    user_message: str,
+    conversation: Optional[List[Dict[str, str]]] = None,
+    rag_results: Optional[List[Dict[str, Any]]] = None,
+    files: Optional[Dict[str, str]] = None,
+    skill_instructions: Optional[str] = None,
+    memories: Optional[List[Dict[str, Any]]] = None,
+    max_tokens: int = 8000,
+) -> str:
+    """
+    快速构建上下文
+    
+    Args:
+        user_message: 用户消息
+        conversation: 对话历史
+        rag_results: RAG 检索结果
+        files: 文件内容 {path: content}
+        skill_instructions: 技能指令
+        memories: 长期记忆
+        max_tokens: 最大 Token 数
+    
+    Returns:
+        格式化的上下文字符串
+    """
+    cm = ContextManager(max_tokens=max_tokens)
+    
+    # 添加技能指令
+    if skill_instructions:
+        cm.add_skill_instructions("当前任务", skill_instructions)
+    
+    # 添加 RAG 结果
+    if rag_results:
+        cm.add_rag_results(rag_results)
+    
+    # 添加文件内容
+    if files:
+        for path, content in files.items():
+            cm.add_file_content(path, content)
+    
+    # 添加记忆
+    if memories:
+        cm.add_memory(memories)
+    
+    # 添加对话历史
+    if conversation:
+        cm.add_conversation_history(conversation)
+    
+    return cm.build()
