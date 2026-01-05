@@ -13,32 +13,6 @@ from loguru import logger
 # ==================== 基础工具 ====================
 
 @tool
-def calculator(expression: str) -> str:
-    """
-    计算数学表达式。
-    
-    支持基本运算: +, -, *, /, **, (, )
-    
-    Args:
-        expression: 数学表达式，如 "2 + 3 * 4" 或 "(10 + 5) / 3"
-    
-    Returns:
-        计算结果字符串
-    """
-    try:
-        allowed_chars = set("0123456789+-*/.() ")
-        if not all(c in allowed_chars for c in expression):
-            return "❌ 错误：表达式包含不允许的字符"
-        
-        result = eval(expression)
-        return f"✅ 计算结果: {expression} = {result}"
-    except ZeroDivisionError:
-        return "❌ 错误：除数不能为零"
-    except Exception as e:
-        return f"❌ 计算错误: {str(e)}"
-
-
-@tool
 def get_current_time() -> str:
     """
     获取当前时间。
@@ -123,7 +97,6 @@ def get_builtin_tools() -> List:
     """
     # 基础工具
     basic = [
-        calculator,
         get_current_time,
         run_python_code,
         search_knowledge_base,
@@ -142,7 +115,6 @@ def get_basic_tools() -> List:
     from .practical_tools import shell_execute, file_read_enhanced, list_directory
     
     return [
-        calculator,
         get_current_time,
         shell_execute,
         file_read_enhanced,
@@ -160,7 +132,6 @@ def get_extended_tools() -> List:
 # ==================== 导出 ====================
 
 __all__ = [
-    "calculator",
     "get_current_time",
     "run_python_code",
     "search_knowledge_base",
