@@ -333,6 +333,9 @@ def get_user_info(runtime: ToolRuntime[UserContext]) -> str:
 
 # ==================== 工具集合 ====================
 
+# 导入实用工具
+from .practical_tools import get_practical_tools
+
 def get_builtin_tools() -> List:
     """
     获取所有内置工具
@@ -340,20 +343,19 @@ def get_builtin_tools() -> List:
     Returns:
         工具列表
     """
-    return [
+    # 基础工具
+    basic = [
         calculator,
         get_current_time,
         get_current_date,
-        word_count,
-        text_to_uppercase,
-        text_to_lowercase,
-        format_json,
-        validate_json,
         run_python_code,
-        read_file_content,
-        search_web,
         search_knowledge_base,
     ]
+    
+    # 实用工具（shell、文件、网页等）
+    practical = get_practical_tools()
+    
+    return basic + practical
 
 
 def get_basic_tools() -> List:
@@ -363,11 +365,14 @@ def get_basic_tools() -> List:
     Returns:
         基础工具列表
     """
+    from .practical_tools import shell_execute, file_read_enhanced, list_directory
+    
     return [
         calculator,
         get_current_time,
-        get_current_date,
-        run_python_code,
+        shell_execute,
+        file_read_enhanced,
+        list_directory,
     ]
 
 
