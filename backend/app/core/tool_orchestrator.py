@@ -18,6 +18,29 @@ import inspect
 import re
 
 
+def get_tool_name(tool: Any) -> str:
+    """获取工具名称，兼容函数和 StructuredTool"""
+    # StructuredTool 有 .name 属性
+    if hasattr(tool, 'name'):
+        return tool.name
+    # 普通函数使用 __name__
+    if hasattr(tool, '__name__'):
+        return tool.__name__
+    # 其他情况
+    return str(tool)
+
+
+def get_tool_doc(tool: Any) -> str:
+    """获取工具文档，兼容函数和 StructuredTool"""
+    # StructuredTool 有 .description 属性
+    if hasattr(tool, 'description'):
+        return tool.description or ""
+    # 普通函数使用 __doc__
+    if hasattr(tool, '__doc__'):
+        return tool.__doc__ or ""
+    return ""
+
+
 class ToolCategory(Enum):
     """工具分类"""
     FILE_SYSTEM = "file_system"      # 文件操作
@@ -149,10 +172,10 @@ class ToolOrchestrator:
         注册工具
         
         Args:
-            tool: 工具函数
+            tool: 工具函数或 StructuredTool
             metadata: 工具元数据（可选，会自动推断）
         """
-        name = tool.__name__
+        name = get_tool_name(tool)
         
         if metadata is None:
             metadata = self._infer_metadata(tool)
@@ -170,13 +193,13 @@ class ToolOrchestrator:
                 self.register(tool)
                 count += 1
             except Exception as e:
-                logger.error(f"Failed to register {tool.__name__}: {e}")
+                logger.error(f"Failed to register {get_tool_name(tool)}: {e}")
         return count
     
     def _infer_metadata(self, tool: Callable) -> ToolMetadata:
         """从工具函数推断元数据"""
-        name = tool.__name__
-        doc = tool.__doc__ or ""
+        name = get_tool_name(tool)
+        doc = get_tool_doc(tool)
         
         # 推断分类
         category = self._infer_category(name, doc)
@@ -187,22 +210,40 @@ class ToolOrchestrator:
         # 提取能力
         capabilities = self._extract_capabilities(name, doc)
         
-        # 检查是否异步
-        is_async = asyncio.iscoroutinefunction(tool)
+        # 检查是否异步 - 兼容 StructuredTool
+        is_async = False
+        if hasattr(tool, 'coroutine') and tool.coroutine is not None:
+            is_async = True
+        elif hasattr(tool, 'func') and asyncio.iscoroutinefunction(getattr(tool, 'func', None)):
+            is_async = True
+        elif callable(tool) and asyncio.iscoroutinefunction(tool):
+            is_async = True
         
         # 检查是否危险
         is_dangerous = any(kw in name.lower() for kw in ["delete", "remove", "execute", "write"])
         
-        # 提取输入参数
-        sig = inspect.signature(tool)
+        # 提取输入参数 - 兼容 StructuredTool
         input_schema = {}
-        for param_name, param in sig.parameters.items():
-            if param_name in ["self", "cls"]:
-                continue
-            input_schema[param_name] = {
-                "type": str(param.annotation) if param.annotation != inspect.Parameter.empty else "any",
-                "required": param.default == inspect.Parameter.empty,
-            }
+        try:
+            if hasattr(tool, 'args_schema') and tool.args_schema is not None:
+                # StructuredTool 有 args_schema
+                for field_name, field_info in tool.args_schema.model_fields.items():
+                    input_schema[field_name] = {
+                        "type": str(field_info.annotation) if hasattr(field_info, 'annotation') else "any",
+                        "required": field_info.is_required() if hasattr(field_info, 'is_required') else True,
+                    }
+            else:
+                # 普通函数
+                sig = inspect.signature(tool)
+                for param_name, param in sig.parameters.items():
+                    if param_name in ["self", "cls"]:
+                        continue
+                    input_schema[param_name] = {
+                        "type": str(param.annotation) if param.annotation != inspect.Parameter.empty else "any",
+                        "required": param.default == inspect.Parameter.empty,
+                    }
+        except Exception:
+            pass  # 如果无法解析，使用空 schema
         
         return ToolMetadata(
             name=name,
@@ -454,7 +495,21 @@ class ToolOrchestrator:
         timeout = timeout or meta.timeout
         
         try:
-            if meta.is_async:
+            # 检查是否是 StructuredTool (LangChain 工具)
+            if hasattr(tool, 'invoke'):
+                # StructuredTool 使用 invoke/ainvoke
+                if hasattr(tool, 'ainvoke'):
+                    result = await asyncio.wait_for(
+                        tool.ainvoke(arguments),
+                        timeout=timeout,
+                    )
+                else:
+                    loop = asyncio.get_event_loop()
+                    result = await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: tool.invoke(arguments)),
+                        timeout=timeout,
+                    )
+            elif meta.is_async:
                 result = await asyncio.wait_for(
                     tool(**arguments),
                     timeout=timeout,

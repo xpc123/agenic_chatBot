@@ -107,9 +107,11 @@ state = ChatState()
 
 # ==================== 聊天函数 ====================
 
-def chat(message: str, history: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, str]], str, str, str]:
+def chat(message: str, history: List[Dict[str, str]]) -> Tuple[List[Dict[str, str]], str, str, str]:
     """
     聊天处理函数
+    
+    Gradio 6.x 使用新的消息格式: {"role": "user/assistant", "content": "..."}
     
     Returns:
         (history, intent_info, tool_info, progress_info)
@@ -180,8 +182,9 @@ def chat(message: str, history: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, 
         tool_info = ""
         progress_info = ""
     
-    # 更新历史
-    history.append((message, response or "（无响应）"))
+    # 更新历史 - Gradio 6.x 格式
+    history.append({"role": "user", "content": message})
+    history.append({"role": "assistant", "content": response or "（无响应）"})
     
     return history, intent_info, tool_info, progress_info
 
@@ -243,8 +246,9 @@ def get_tools_list() -> str:
         
         lines = ["### 🔧 可用工具\n"]
         for tool in tools:
-            name = tool.__name__
-            doc = (tool.__doc__ or "").split("\n")[0]
+            # StructuredTool 使用 .name 属性
+            name = getattr(tool, 'name', getattr(tool, '__name__', 'unknown'))
+            doc = getattr(tool, 'description', '') or (tool.__doc__ or "").split("\n")[0]
             lines.append(f"- **{name}**: {doc}")
         
         return "\n".join(lines)
@@ -263,7 +267,6 @@ def create_demo():
     
     with gr.Blocks(
         title="🤖 Agentic ChatBot v2 - Cursor Style",
-        theme=gr.themes.Soft(primary_hue="indigo"),
     ) as demo:
         
         gr.Markdown("""
@@ -309,7 +312,6 @@ def create_demo():
                 chatbot = gr.Chatbot(
                     label="对话",
                     height=500,
-                    show_copy_button=True,
                 )
                 
                 with gr.Row():

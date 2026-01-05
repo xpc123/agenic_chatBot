@@ -100,7 +100,11 @@ class SkillsManager:
     """
     
     def __init__(self, skills_dir: Optional[str] = None):
-        self.skills_dir = Path(skills_dir) if skills_dir else Path(settings.DATA_DIR) / "skills"
+        if skills_dir:
+            self.skills_dir = Path(skills_dir)
+        else:
+            # 使用与其他数据目录相同的路径模式
+            self.skills_dir = Path("./data/skills")
         self.skills_dir.mkdir(parents=True, exist_ok=True)
         
         self.skills: Dict[str, Skill] = {}

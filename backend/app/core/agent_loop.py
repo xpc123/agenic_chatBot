@@ -438,7 +438,15 @@ class AgentLoop:
                 
                 # 执行工具
                 tool_args = step.get("tool_args", {})
-                if asyncio.iscoroutinefunction(tool):
+                
+                # 检查是否是 StructuredTool (LangChain 工具)
+                if hasattr(tool, 'invoke'):
+                    # StructuredTool 使用 invoke/ainvoke
+                    if hasattr(tool, 'ainvoke'):
+                        result = await tool.ainvoke(tool_args)
+                    else:
+                        result = tool.invoke(tool_args)
+                elif asyncio.iscoroutinefunction(tool):
                     result = await tool(**tool_args)
                 else:
                     result = tool(**tool_args)
