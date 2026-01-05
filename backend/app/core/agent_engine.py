@@ -645,10 +645,9 @@ class ExecutorAgent:
 # ==================== 内置工具导入 ====================
 
 from .tools import (
-    calculator,
     get_current_time,
-    get_current_date,
-    search_web,
+    run_python_code,
+    search_knowledge_base,
     get_builtin_tools,
     get_basic_tools,
     get_extended_tools,

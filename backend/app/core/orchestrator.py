@@ -27,7 +27,7 @@ from .tool_executor import ToolExecutor
 from .context_loader import ContextLoader
 from .context_manager import ContextManager
 from .agent_engine import ExecutorAgent, AgentContext
-from .tools import calculator, get_current_time, search_web, get_basic_tools
+from .tools import get_current_time, get_basic_tools, run_python_code
 from ..llm import get_llm_client
 
 
@@ -121,12 +121,12 @@ class Orchestrator:
         构建工具列表
         
         优先级:
-        1. 内置工具 (calculator, get_current_time, etc.)
+        1. 内置工具 (get_current_time, run_python_code, etc.)
         2. 自定义工具 (用户传入)
         3. MCP 工具 (如果配置了)
         """
         # 内置工具
-        builtin_tools = [calculator, get_current_time, search_web]
+        builtin_tools = [get_current_time, run_python_code]
         
         # 自定义工具
         user_tools = custom_tools or []

@@ -4,6 +4,7 @@ API路由模块
 """
 from fastapi import APIRouter
 from .chat import router as chat_router
+from .chat_v2 import router as chat_v2_router  # Cursor 风格 API
 from .documents import router as documents_router
 from .tools import router as tools_router
 from .sdk import sdk_router
@@ -13,6 +14,7 @@ api_router = APIRouter(prefix="/api/v1")
 
 # 注册子路由
 api_router.include_router(chat_router)
+api_router.include_router(chat_v2_router)  # 新版 Chat API
 api_router.include_router(documents_router)
 api_router.include_router(tools_router)
 api_router.include_router(sdk_router)
