@@ -1,0 +1,29 @@
+{
+  "user_id": "regression-golden_007",
+  "response_style": "detailed",
+  "language": "chinese",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 6,
+      "success_count": 6,
+      "last_used": "2026-01-05T17:23:29.682661"
+    },
+    "file_read_enhanced": {
+      "use_count": 6,
+      "success_count": 6,
+      "last_used": "2026-01-05T17:23:29.683787"
+    }
+  },
+  "favorite_tools": [
+    "list_directory",
+    "file_read_enhanced"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 3,
+  "avg_message_length": 17.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:14:29.354746",
+  "last_active": "2026-01-05T17:23:29.680777"
+}

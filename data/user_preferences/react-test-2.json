@@ -1,0 +1,23 @@
+{
+  "user_id": "react-test-2",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T17:54:08.395376"
+    }
+  },
+  "favorite_tools": [
+    "list_directory"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 1,
+  "avg_message_length": 10.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:53:49.409983",
+  "last_active": "2026-01-05T17:54:08.393792"
+}

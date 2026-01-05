@@ -1,0 +1,35 @@
+{
+  "user_id": "debug",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:34:22.084614"
+    },
+    "shell_execute": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:45:51.773327"
+    },
+    "file_read_enhanced": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:46:32.969900"
+    }
+  },
+  "favorite_tools": [
+    "list_directory",
+    "shell_execute",
+    "file_read_enhanced"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 3,
+  "avg_message_length": 49.333333333333336,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T16:34:07.911962",
+  "last_active": "2026-01-05T16:46:32.968230"
+}

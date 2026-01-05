@@ -227,6 +227,12 @@ class AgentLoop:
         try:
             # 1. 判断是否需要规划
             if not self._needs_planning(task, intent):
+                # 检查是否需要轻量多步骤执行
+                if self._needs_lightweight_planning(task, intent):
+                    async for update in self._execute_lightweight_multistep(task, intent, context):
+                        yield update
+                    return
+                
                 # 简单任务，直接执行
                 async for update in self._execute_simple(task, context):
                     yield update
@@ -341,10 +347,18 @@ class AgentLoop:
         """判断是否需要规划"""
         # 如果有意图分析结果，使用它
         if intent:
-            return intent.is_multi_step or intent.complexity in ["medium", "high"]
+            # 只有高复杂度任务才需要完整规划
+            # medium 复杂度使用轻量模式
+            return intent.complexity == "high"
         
         # 否则使用 planner 的判断
         return self.planner.should_use_planning(task)
+    
+    def _needs_lightweight_planning(self, task: str, intent: Optional[Intent]) -> bool:
+        """判断是否需要轻量规划（直接工具链）"""
+        if intent:
+            return intent.is_multi_step and intent.complexity == "medium"
+        return False
     
     async def _execute_simple(
         self,
@@ -374,6 +388,162 @@ class AgentLoop:
                 type="error",
                 message=f"❌ 处理失败: {str(e)}",
             )
+    
+    async def _execute_lightweight_multistep(
+        self,
+        task: str,
+        intent: Optional[Intent],
+        context: Optional[Dict[str, Any]],
+    ) -> AsyncGenerator[ProgressUpdate, None]:
+        """
+        轻量多步骤执行 - 不使用完整规划
+        
+        直接根据意图执行工具链，只在最后调用一次 LLM 总结
+        """
+        yield ProgressUpdate(
+            type="thinking",
+            message="⚡ 快速执行模式...",
+        )
+        
+        tool_results = []
+        suggested_tools = intent.suggested_tools if intent else []
+        
+        # 不需要参数的工具列表
+        no_args_tools = {"process_list", "env_info", "get_current_time"}
+        
+        # 如果有建议的工具，只执行无参数的
+        if suggested_tools:
+            safe_tools = [t for t in suggested_tools if t in no_args_tools]
+            
+            for i, tool_name in enumerate(safe_tools[:3], 1):  # 最多 3 个工具
+                tool = self.tools.get(tool_name)
+                if not tool:
+                    continue
+                
+                yield ProgressUpdate(
+                    type="action",
+                    step=i,
+                    total_steps=len(safe_tools),
+                    message=f"🔧 执行: {tool_name}",
+                )
+                
+                try:
+                    # 执行工具
+                    if hasattr(tool, 'ainvoke'):
+                        result = await tool.ainvoke({})
+                    elif hasattr(tool, 'invoke'):
+                        result = tool.invoke({})
+                    elif asyncio.iscoroutinefunction(tool):
+                        result = await tool()
+                    else:
+                        result = tool()
+                    
+                    tool_results.append({
+                        "tool": tool_name,
+                        "result": str(result)[:2000],  # 限制长度
+                    })
+                    
+                    yield ProgressUpdate(
+                        type="result",
+                        step=i,
+                        total_steps=len(safe_tools),
+                        message=f"✅ {tool_name} 完成",
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Tool {tool_name} failed: {e}")
+                    yield ProgressUpdate(
+                        type="error",
+                        step=i,
+                        message=f"❌ {tool_name} 失败: {str(e)}",
+                    )
+        
+        # 如果没有工具结果，尝试智能推断工具
+        if not tool_results:
+            # 根据任务关键词选择工具（仅无参数工具）
+            task_lower = task.lower()
+            auto_tools = []
+            
+            # 只选择不需要参数的工具
+            if "进程" in task_lower or "process" in task_lower:
+                auto_tools.append("process_list")
+            if "环境" in task_lower or "env" in task_lower:
+                auto_tools.append("env_info")
+            # 注意：list_directory 和 shell_execute 需要参数，不自动执行
+            
+            for tool_name in auto_tools:
+                tool = self.tools.get(tool_name)
+                if not tool:
+                    continue
+                
+                yield ProgressUpdate(
+                    type="action",
+                    message=f"🔧 自动执行: {tool_name}",
+                )
+                
+                try:
+                    if hasattr(tool, 'ainvoke'):
+                        result = await tool.ainvoke({})
+                    elif hasattr(tool, 'invoke'):
+                        result = tool.invoke({})
+                    elif asyncio.iscoroutinefunction(tool):
+                        result = await tool()
+                    else:
+                        result = tool()
+                    
+                    tool_results.append({
+                        "tool": tool_name,
+                        "result": str(result)[:2000],
+                    })
+                    
+                    yield ProgressUpdate(
+                        type="result",
+                        message=f"✅ {tool_name} 完成",
+                    )
+                except Exception as e:
+                    logger.error(f"Auto tool {tool_name} failed: {e}")
+        
+        # 生成简洁总结（单次 LLM 调用）
+        if tool_results:
+            yield ProgressUpdate(
+                type="thinking",
+                message="📝 生成分析结果...",
+            )
+            
+            # 构建简洁的总结提示
+            results_text = "\n".join([
+                f"**{r['tool']}**:\n{r['result'][:1000]}"
+                for r in tool_results
+            ])
+            
+            summary_prompt = f"""用户任务: {task}
+
+工具执行结果:
+{results_text}
+
+请简洁地总结分析结果（不超过 300 字）:"""
+            
+            try:
+                summary = await self.llm.chat_completion(
+                    messages=[{"role": "user", "content": summary_prompt}],
+                    temperature=0.3,
+                    max_tokens=500,  # 限制输出长度
+                )
+                
+                yield ProgressUpdate(
+                    type="complete",
+                    message=summary,
+                )
+            except Exception as e:
+                # 如果总结失败，直接返回工具结果
+                yield ProgressUpdate(
+                    type="complete",
+                    message=f"工具执行完成:\n{results_text[:1500]}",
+                )
+        else:
+            # 没有工具结果，降级到简单执行
+            async for update in self._execute_simple(task, context):
+                yield update
     
     async def _create_plan(
         self,

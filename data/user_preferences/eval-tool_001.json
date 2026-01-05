@@ -1,0 +1,23 @@
+{
+  "user_id": "eval-tool_001",
+  "response_style": "detailed",
+  "language": "chinese",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 4,
+      "success_count": 4,
+      "last_used": "2026-01-05T17:25:13.277004"
+    }
+  },
+  "favorite_tools": [
+    "list_directory"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 2,
+  "avg_message_length": 14.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:04:59.398792",
+  "last_active": "2026-01-05T17:25:13.275139"
+}

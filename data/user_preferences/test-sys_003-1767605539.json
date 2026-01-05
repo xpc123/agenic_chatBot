@@ -1,0 +1,23 @@
+{
+  "user_id": "test-sys_003-1767605539",
+  "response_style": "detailed",
+  "language": "chinese",
+  "tool_usage": {
+    "shell_execute": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T17:32:28.381278"
+    }
+  },
+  "favorite_tools": [
+    "shell_execute"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 1,
+  "avg_message_length": 18.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:32:19.366571",
+  "last_active": "2026-01-05T17:32:28.379850"
+}

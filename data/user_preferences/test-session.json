@@ -1,0 +1,23 @@
+{
+  "user_id": "test-session",
+  "response_style": "detailed",
+  "language": "english",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:07:04.321277"
+    }
+  },
+  "favorite_tools": [
+    "list_directory"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 2,
+  "avg_message_length": 47.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T16:04:31.989321",
+  "last_active": "2026-01-05T16:07:04.319614"
+}

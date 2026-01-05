@@ -1,0 +1,29 @@
+{
+  "user_id": "test-mem_002-1767605574",
+  "response_style": "detailed",
+  "language": "chinese",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 4,
+      "success_count": 4,
+      "last_used": "2026-01-05T17:33:36.804042"
+    },
+    "file_read_enhanced": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T17:33:36.802707"
+    }
+  },
+  "favorite_tools": [
+    "list_directory",
+    "file_read_enhanced"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 2,
+  "avg_message_length": 30.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:32:54.428932",
+  "last_active": "2026-01-05T17:33:36.800433"
+}

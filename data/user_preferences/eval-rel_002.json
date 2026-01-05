@@ -1,0 +1,20 @@
+{
+  "user_id": "eval-rel_002",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {},
+  "favorite_tools": [],
+  "domains": [],
+  "topics": {
+    "api": {
+      "mention_count": 2,
+      "last_mentioned": "2026-01-05T17:27:06.533993"
+    }
+  },
+  "total_messages": 2,
+  "avg_message_length": 17.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:06:39.635984",
+  "last_active": "2026-01-05T17:27:06.533944"
+}

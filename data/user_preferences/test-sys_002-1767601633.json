@@ -1,0 +1,29 @@
+{
+  "user_id": "test-sys_002-1767601633",
+  "response_style": "detailed",
+  "language": "chinese",
+  "tool_usage": {
+    "env_info": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:27:31.768371"
+    },
+    "process_list": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:27:31.769695"
+    }
+  },
+  "favorite_tools": [
+    "env_info",
+    "process_list"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 1,
+  "avg_message_length": 9.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T16:27:13.526161",
+  "last_active": "2026-01-05T16:27:31.767153"
+}

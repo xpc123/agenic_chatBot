@@ -1,0 +1,28 @@
+{
+  "user_id": "test-file_004-1767602292",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:38:21.251616"
+    }
+  },
+  "favorite_tools": [
+    "list_directory"
+  ],
+  "domains": [],
+  "topics": {
+    "python": {
+      "mention_count": 1,
+      "last_mentioned": "2026-01-05T16:38:21.250345"
+    }
+  },
+  "total_messages": 1,
+  "avg_message_length": 64.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T16:38:12.045373",
+  "last_active": "2026-01-05T16:38:21.250287"
+}

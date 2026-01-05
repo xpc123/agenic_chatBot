@@ -23,6 +23,29 @@ from loguru import logger
 from ..config import settings
 
 
+# ============================================================================
+# JedAI Token 缓存 - 避免重复登录
+# ============================================================================
+_jedai_token_cache: Dict[str, str] = {}  # {username: token}
+
+
+def get_cached_jedai_token() -> Optional[str]:
+    """获取缓存的 JedAI Token"""
+    username = settings.JEDAI_USERNAME
+    if username and username in _jedai_token_cache:
+        logger.debug(f"Using cached JedAI token for {username}")
+        return _jedai_token_cache[username]
+    return None
+
+
+def cache_jedai_token(token: str) -> None:
+    """缓存 JedAI Token"""
+    username = settings.JEDAI_USERNAME
+    if username and token:
+        _jedai_token_cache[username] = token
+        logger.debug(f"Cached JedAI token for {username}")
+
+
 class LLMClient:
     """
     LLM 客户端统一接口
@@ -201,9 +224,14 @@ class LLMClient:
     
     def _jedai_login(self) -> Optional[str]:
         """
-        JedAI 登录获取 token
+        JedAI 登录获取 token（带缓存）
         """
         import httpx as sync_httpx
+        
+        # 先检查缓存
+        cached_token = get_cached_jedai_token()
+        if cached_token:
+            return cached_token
         
         if not settings.JEDAI_USERNAME or not settings.JEDAI_PASSWORD:
             logger.warning("JedAI username/password not configured, skipping login")
@@ -228,6 +256,8 @@ class LLMClient:
                     token = data.get('access_token') or data.get('token')
                     if token:
                         logger.info("JedAI login successful")
+                        # 缓存 token
+                        cache_jedai_token(token)
                         return token
                 
                 logger.error(f"JedAI login failed: {response.status_code} - {response.text}")
@@ -493,12 +523,12 @@ class EmbeddingClient:
                 if not base_url.endswith("/embeddings"):
                     base_url = f"{base_url.rstrip('/')}/api/copilot/v1/llm"
             
-            # 获取 API key
-            jedai_api_key = api_key or settings.JEDAI_API_KEY
+            # 获取 API key（优先使用缓存的 token）
+            jedai_api_key = api_key or settings.JEDAI_API_KEY or get_cached_jedai_token()
             if not jedai_api_key:
-                # 尝试登录获取 token
-                from ..llm.client import LLMClient
-                jedai_api_key = LLMClient._jedai_login(None) or "dummy-key"
+                # 尝试登录获取 token（会自动缓存）
+                temp_client = LLMClient.__new__(LLMClient)
+                jedai_api_key = temp_client._jedai_login() or "dummy-key"
             
             logger.info(f"Initializing JedAI embedding client: {base_url}, model={self.model}, provider={settings.JEDAI_EMBEDDING_PROVIDER}")
             

@@ -1,0 +1,23 @@
+{
+  "user_id": "eval-task_002",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 4,
+      "success_count": 4,
+      "last_used": "2026-01-05T17:28:09.146402"
+    }
+  },
+  "favorite_tools": [
+    "list_directory"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 2,
+  "avg_message_length": 51.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:08:01.927633",
+  "last_active": "2026-01-05T17:28:09.145100"
+}

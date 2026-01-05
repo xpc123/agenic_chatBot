@@ -1,0 +1,15 @@
+{
+  "user_id": "test-qa_003-1767602880",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {},
+  "favorite_tools": [],
+  "domains": [],
+  "topics": {},
+  "total_messages": 1,
+  "avg_message_length": 38.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T16:48:05.270473",
+  "last_active": "2026-01-05T16:48:20.543668"
+}

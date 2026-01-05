@@ -1,0 +1,137 @@
+{
+  "version": "1.0.0",
+  "description": "黄金用例 - 用于回归测试，确保功能稳定",
+  "cases": [
+    {
+      "id": "golden_001",
+      "name": "简单问候",
+      "category": "conversation",
+      "priority": "P0",
+      "input": "你好",
+      "expected": {
+        "should_contain": ["你好"],
+        "should_not_contain": ["错误", "失败", "无法访问"],
+        "max_latency_ms": 15000,
+        "tool_calls": []
+      }
+    },
+    {
+      "id": "golden_002",
+      "name": "目录列表",
+      "category": "tool_use",
+      "priority": "P0",
+      "input": "列出 /tmp 目录",
+      "expected": {
+        "should_contain": ["目录", "文件"],
+        "should_not_contain": ["无法访问文件系统"],
+        "max_latency_ms": 30000,
+        "tool_calls": ["list_directory"]
+      }
+    },
+    {
+      "id": "golden_003",
+      "name": "文件读取",
+      "category": "tool_use",
+      "priority": "P0",
+      "input": "读取 /etc/hostname 文件",
+      "expected": {
+        "should_contain": ["文件"],
+        "should_not_contain": ["无法访问"],
+        "max_latency_ms": 20000,
+        "tool_calls": ["file_read_enhanced"]
+      }
+    },
+    {
+      "id": "golden_004",
+      "name": "Shell命令执行",
+      "category": "tool_use",
+      "priority": "P0",
+      "input": "执行命令 `pwd`",
+      "expected": {
+        "should_contain": ["/"],
+        "should_not_contain": ["无法执行"],
+        "max_latency_ms": 15000,
+        "tool_calls": ["shell_execute"]
+      }
+    },
+    {
+      "id": "golden_005",
+      "name": "代码生成",
+      "category": "generation",
+      "priority": "P1",
+      "input": "写一个 Python 的 hello world",
+      "expected": {
+        "should_contain": ["print", "hello", "python"],
+        "should_not_contain": [],
+        "max_latency_ms": 30000,
+        "tool_calls": []
+      }
+    },
+    {
+      "id": "golden_006",
+      "name": "项目分析",
+      "category": "analysis",
+      "priority": "P1",
+      "input": "分析 /ADE1/users/xpengche/project/ContexBuilder 项目结构",
+      "expected": {
+        "should_contain": ["src", "tests", "项目"],
+        "should_not_contain": ["无法访问"],
+        "max_latency_ms": 45000,
+        "tool_calls": ["list_directory"]
+      }
+    },
+    {
+      "id": "golden_007",
+      "name": "错误路径处理",
+      "category": "error_handling",
+      "priority": "P1",
+      "input": "读取 /不存在的路径/文件.txt",
+      "expected": {
+        "should_contain": ["不存在"],
+        "should_not_contain": ["崩溃", "traceback"],
+        "max_latency_ms": 20000,
+        "tool_calls": []
+      }
+    },
+    {
+      "id": "golden_008",
+      "name": "技术问答",
+      "category": "qa",
+      "priority": "P1",
+      "input": "什么是 REST API？",
+      "expected": {
+        "should_contain": ["HTTP", "API"],
+        "should_not_contain": [],
+        "max_latency_ms": 45000,
+        "tool_calls": []
+      }
+    },
+    {
+      "id": "golden_009",
+      "name": "代码解释",
+      "category": "analysis",
+      "priority": "P1",
+      "input": "解释这段代码: for i in range(10): print(i)",
+      "expected": {
+        "should_contain": ["循环", "range", "10"],
+        "should_not_contain": [],
+        "max_latency_ms": 25000,
+        "tool_calls": []
+      }
+    },
+    {
+      "id": "golden_010",
+      "name": "环境信息",
+      "category": "tool_use",
+      "priority": "P2",
+      "input": "告诉我当前系统环境",
+      "expected": {
+        "should_contain": ["系统", "环境"],
+        "should_not_contain": [],
+        "max_latency_ms": 25000,
+        "tool_calls": ["env_info"]
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,29 @@
+{
+  "user_id": "test-complex_001-1767605697",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {
+    "file_read_enhanced": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T17:35:23.227429"
+    },
+    "list_directory": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T17:35:23.228303"
+    }
+  },
+  "favorite_tools": [
+    "file_read_enhanced",
+    "list_directory"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 1,
+  "avg_message_length": 76.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:34:57.121732",
+  "last_active": "2026-01-05T17:35:23.226059"
+}

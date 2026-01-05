@@ -1,0 +1,20 @@
+{
+  "user_id": "test-cursor_001-1767605813",
+  "response_style": "detailed",
+  "language": "chinese",
+  "tool_usage": {},
+  "favorite_tools": [],
+  "domains": [],
+  "topics": {
+    "python": {
+      "mention_count": 1,
+      "last_mentioned": "2026-01-05T17:37:27.677796"
+    }
+  },
+  "total_messages": 1,
+  "avg_message_length": 24.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:36:59.383746",
+  "last_active": "2026-01-05T17:37:27.677745"
+}

@@ -1,0 +1,23 @@
+{
+  "user_id": "test-code_001-1767605616",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {
+    "file_read_enhanced": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T17:34:14.331206"
+    }
+  },
+  "favorite_tools": [
+    "file_read_enhanced"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 1,
+  "avg_message_length": 80.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:33:36.805193",
+  "last_active": "2026-01-05T17:34:14.329693"
+}

@@ -1,0 +1,20 @@
+{
+  "user_id": "test-edge_001-1767603260",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {},
+  "favorite_tools": [],
+  "domains": [],
+  "topics": {
+    "python": {
+      "mention_count": 1,
+      "last_mentioned": "2026-01-05T16:54:54.293210"
+    }
+  },
+  "total_messages": 1,
+  "avg_message_length": 36.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T16:54:25.652879",
+  "last_active": "2026-01-05T16:54:54.293158"
+}

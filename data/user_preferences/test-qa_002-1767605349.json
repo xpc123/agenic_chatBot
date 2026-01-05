@@ -1,0 +1,20 @@
+{
+  "user_id": "test-qa_002-1767605349",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {},
+  "favorite_tools": [],
+  "domains": [],
+  "topics": {
+    "api": {
+      "mention_count": 1,
+      "last_mentioned": "2026-01-05T17:29:38.305437"
+    }
+  },
+  "total_messages": 1,
+  "avg_message_length": 13.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:29:14.567108",
+  "last_active": "2026-01-05T17:29:38.305382"
+}

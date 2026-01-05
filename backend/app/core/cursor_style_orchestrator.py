@@ -170,7 +170,7 @@ class CursorStyleOrchestrator:
         rag_query: Optional[str] = None,
     ) -> AsyncGenerator[StreamChunk, None]:
         """
-        流式对话接口
+        流式对话接口 - 纯 ReAct 模式
         
         Args:
             message: 用户消息
@@ -187,19 +187,17 @@ class CursorStyleOrchestrator:
         used_tools = []
         
         try:
-            # ==================== 1. 意图识别 ====================
-            yield StreamChunk(type="thinking", content="🔍 分析您的请求...")
+            # ==================== 1. 构建上下文 ====================
+            yield StreamChunk(type="thinking", content="📚 收集相关信息...")
             
+            # 简单意图识别（仅用于上下文构建，不用于路由）
             intent = await self.intent_recognizer.recognize(
                 message,
                 history=self._get_conversation_history(session_id),
                 available_tools=list(self.tool_orchestrator.tools.keys()),
             )
             
-            logger.info(f"Intent: {intent.task_type.value}, complexity: {intent.complexity}")
-            
-            # ==================== 2. 构建上下文 ====================
-            yield StreamChunk(type="thinking", content="📚 收集相关信息...")
+            logger.info(f"Intent (for context): {intent.task_type.value}")
             
             context = await self._build_context(
                 message=message,
@@ -210,35 +208,16 @@ class CursorStyleOrchestrator:
                 rag_query=rag_query,
             )
             
-            # ==================== 3. 根据意图选择处理策略 ====================
+            # ==================== 2. 纯 ReAct 模式处理 ====================
             
-            if intent.task_type == TaskType.CONVERSATION:
-                # 简单对话，直接回复
-                async for chunk in self._handle_conversation(message, context, user_id):
-                    yield chunk
-                    
-            elif intent.is_multi_step or intent.complexity == "high":
-                # 复杂任务，使用 Agent Loop
-                async for chunk in self._handle_complex_task(
-                    message, intent, context, session_id, user_id
-                ):
-                    yield chunk
-                    if chunk.metadata and chunk.metadata.get("tool"):
-                        used_tools.append(chunk.metadata["tool"])
-                        
-            elif RequiredCapability.TOOLS in intent.required_capabilities:
-                # 需要工具，使用工具编排
-                async for chunk in self._handle_tool_task(
-                    message, intent, context, user_id
-                ):
-                    yield chunk
-                    if chunk.metadata and chunk.metadata.get("tool"):
-                        used_tools.append(chunk.metadata["tool"])
-                        
-            else:
-                # 普通任务，直接 LLM 回复
-                async for chunk in self._handle_simple_task(message, context, user_id):
-                    yield chunk
+            assistant_response_parts = []
+            
+            async for chunk in self._handle_react(message, context, session_id, user_id):
+                if chunk.type == "text":
+                    assistant_response_parts.append(chunk.content or "")
+                yield chunk
+                if chunk.metadata and chunk.metadata.get("tool"):
+                    used_tools.append(chunk.metadata["tool"])
             
             # ==================== 4. 学习和记录 ====================
             if self.enable_preferences:
@@ -246,8 +225,11 @@ class CursorStyleOrchestrator:
                 for tool in used_tools:
                     self.preference_manager.learn_from_tool_usage(user_id, tool, True)
             
-            # 记录对话
+            # 记录对话 - 用户消息和助手回复
             await self._save_conversation(session_id, message, "user")
+            assistant_response = "".join(assistant_response_parts)
+            if assistant_response:
+                await self._save_conversation(session_id, assistant_response, "assistant")
             
             # 计算耗时
             duration = (datetime.now() - start_time).total_seconds() * 1000
@@ -387,30 +369,293 @@ class CursorStyleOrchestrator:
         
         return cm.build()
     
+    async def _handle_react(
+        self,
+        message: str,
+        context: str,
+        session_id: str,
+        user_id: str,
+        max_iterations: int = 5,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """
+        纯 ReAct 模式处理
+        
+        ReAct 循环:
+        1. Thought: LLM 分析问题，决定下一步
+        2. Action: 如果需要，调用工具
+        3. Observation: 获取工具结果
+        4. 重复直到 LLM 给出 Final Answer
+        """
+        import re
+        import json
+        
+        tool_info = self._get_tool_info_for_react()
+        
+        # ReAct 系统提示
+        system_prompt = f"""你是一个智能 AI 助手，使用 ReAct（Reasoning + Acting）模式来帮助用户。
+
+## 可用工具
+
+{tool_info}
+
+## ReAct 格式
+
+每次回复请使用以下格式：
+
+**如果需要使用工具：**
+```
+Thought: [分析当前情况，思考下一步该做什么]
+Action: <tool_call>{{"tool": "工具名", "args": {{"参数": "值"}}}}</tool_call>
+```
+
+**如果可以直接回答（不需要工具或已获得足够信息）：**
+```
+Thought: [总结思考过程]
+Final Answer: [给用户的完整回复]
+```
+
+## 重要规则
+
+1. **每次只执行一个 Action**，等待 Observation 后再决定下一步
+2. **文件/目录操作**：用户提到路径时，使用 list_directory 或 file_read_enhanced
+3. **系统命令**：用户需要执行命令时，使用 shell_execute
+4. **永远不要说"我无法访问"**，你有工具可以访问文件系统
+5. **简单对话**（如问候、感谢）可以直接给出 Final Answer
+
+## 上下文信息
+
+{context}
+"""
+        
+        # 对话历史（用于 ReAct 循环）
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message},
+        ]
+        
+        iteration = 0
+        while iteration < max_iterations:
+            iteration += 1
+            
+            yield StreamChunk(
+                type="thinking", 
+                content=f"🧠 思考中... (步骤 {iteration}/{max_iterations})"
+            )
+            
+            try:
+                response = await self.llm.chat_completion(
+                    messages=messages,
+                    temperature=0.3,
+                )
+            except Exception as e:
+                yield StreamChunk(type="error", content=f"LLM 调用失败: {str(e)}")
+                return
+            
+            # 检查是否有 Final Answer
+            final_match = re.search(r'Final Answer:\s*(.+)', response, re.DOTALL)
+            if final_match:
+                final_answer = final_match.group(1).strip()
+                yield StreamChunk(type="text", content=final_answer)
+                return
+            
+            # 检查是否有工具调用
+            tool_match = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', response, re.DOTALL)
+            if tool_match:
+                try:
+                    call = json.loads(tool_match.group(1))
+                    tool_name = call.get("tool")
+                    args = call.get("args", {})
+                    
+                    if tool_name and tool_name in self.tool_orchestrator.tools:
+                        yield StreamChunk(
+                            type="tool_call",
+                            content=f"🔧 执行 {tool_name}...",
+                            metadata={"tool": tool_name, "args": args},
+                        )
+                        
+                        success, output = await self.tool_orchestrator.execute(tool_name, args)
+                        
+                        # 限制输出长度
+                        output_str = str(output)[:3000]
+                        
+                        yield StreamChunk(
+                            type="tool_result",
+                            content=f"{'✅' if success else '❌'} {tool_name}",
+                            metadata={"tool": tool_name, "success": success},
+                        )
+                        
+                        # 将结果添加到对话历史，继续 ReAct 循环
+                        messages.append({"role": "assistant", "content": response})
+                        messages.append({
+                            "role": "user", 
+                            "content": f"Observation: {output_str}\n\n请继续分析并决定下一步。如果已有足够信息，请给出 Final Answer。"
+                        })
+                        continue
+                    else:
+                        # 工具不存在
+                        messages.append({"role": "assistant", "content": response})
+                        messages.append({
+                            "role": "user",
+                            "content": f"Observation: 错误 - 工具 '{tool_name}' 不存在。可用工具: {list(self.tool_orchestrator.tools.keys())}"
+                        })
+                        continue
+                        
+                except json.JSONDecodeError as e:
+                    messages.append({"role": "assistant", "content": response})
+                    messages.append({
+                        "role": "user",
+                        "content": f"Observation: 工具调用格式错误: {str(e)}。请使用正确的 JSON 格式。"
+                    })
+                    continue
+            
+            # 没有工具调用也没有 Final Answer，可能是直接回复
+            # 尝试提取 Thought 后的内容作为回复
+            thought_match = re.search(r'Thought:\s*(.+?)(?=Action:|Final Answer:|$)', response, re.DOTALL)
+            if thought_match and not tool_match:
+                # LLM 可能忘记了 Final Answer 格式，直接使用回复
+                yield StreamChunk(type="text", content=response)
+                return
+            
+            # 其他情况，直接返回 LLM 的回复
+            yield StreamChunk(type="text", content=response)
+            return
+        
+        # 达到最大迭代次数
+        yield StreamChunk(
+            type="text", 
+            content="抱歉，这个问题比较复杂，我尝试了多次但未能完全解决。以下是我目前的分析结果..."
+        )
+    
     async def _handle_conversation(
         self,
         message: str,
         context: str,
         user_id: str,
     ) -> AsyncGenerator[StreamChunk, None]:
-        """处理普通对话"""
-        prompt = f"""
+        """
+        处理对话 - 已弃用，统一使用 _handle_react
+        """
+        # 保留此方法以兼容，但实际上已不再使用
+        tool_info = self._get_tool_info_for_react()
+        
+        prompt = f"""你是一个智能 AI 助手，可以使用以下工具来帮助用户：
+
+{tool_info}
+
 {context}
 
 用户: {message}
 
-请友好地回复用户。"""
+## 回复规则
+
+1. **如果需要使用工具**，请用以下格式（可多次使用）：
+   <tool_call>
+   {{"tool": "工具名", "args": {{"参数名": "参数值"}}}}
+   </tool_call>
+
+2. **如果不需要工具**，直接回复用户。
+
+3. **关于文件操作**：
+   - 用户提到路径时，直接使用 list_directory 或 file_read_enhanced
+   - 用户说"分析项目"时，先用 list_directory 查看结构
+   - 不要说"我无法访问文件系统"，你有工具可以访问
+
+请回复："""
         
         try:
             response = await self.llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
+                temperature=0.3,
             )
             
-            yield StreamChunk(type="text", content=response)
+            if "<tool_call>" in response:
+                async for chunk in self._execute_react_tools(response, message, context):
+                    yield chunk
+            else:
+                yield StreamChunk(type="text", content=response)
             
         except Exception as e:
             yield StreamChunk(type="error", content=f"回复失败: {str(e)}")
+    
+    async def _execute_react_tools(
+        self,
+        llm_response: str,
+        original_message: str,
+        context: str,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """
+        执行 ReAct 模式中 LLM 请求的工具调用
+        """
+        import re
+        import json
+        
+        # 提取所有工具调用
+        tool_pattern = r'<tool_call>\s*(\{.*?\})\s*</tool_call>'
+        tool_calls = re.findall(tool_pattern, llm_response, re.DOTALL)
+        
+        if not tool_calls:
+            # 没有有效的工具调用，返回原始响应
+            yield StreamChunk(type="text", content=llm_response)
+            return
+        
+        results = []
+        for call_json in tool_calls:
+            try:
+                call = json.loads(call_json)
+                tool_name = call.get("tool")
+                args = call.get("args", {})
+                
+                if tool_name and tool_name in self.tool_orchestrator.tools:
+                    yield StreamChunk(
+                        type="tool_call",
+                        content=f"🔧 执行 {tool_name}...",
+                        metadata={"tool": tool_name, "args": args},
+                    )
+                    
+                    success, output = await self.tool_orchestrator.execute(tool_name, args)
+                    
+                    results.append({
+                        "tool": tool_name,
+                        "success": success,
+                        "output": str(output)[:2000],  # 限制长度
+                    })
+                    
+                    yield StreamChunk(
+                        type="tool_result",
+                        content=f"{'✅' if success else '❌'} {tool_name}",
+                        metadata={"tool": tool_name, "success": success},
+                    )
+            except json.JSONDecodeError:
+                continue
+        
+        if not results:
+            yield StreamChunk(type="text", content=llm_response)
+            return
+        
+        # 根据工具结果生成最终回复
+        results_text = "\n\n".join([
+            f"### {r['tool']}\n```\n{r['output']}\n```" for r in results
+        ])
+        
+        summary_prompt = f"""
+{context}
+
+用户问题: {original_message}
+
+工具执行结果:
+{results_text}
+
+请根据以上工具执行结果，给用户一个完整、有帮助的回复。如果是分析项目，请总结项目的主要内容和结构。"""
+        
+        try:
+            summary = await self.llm.chat_completion(
+                messages=[{"role": "user", "content": summary_prompt}],
+                temperature=0.5,
+            )
+            yield StreamChunk(type="text", content=summary)
+        except Exception as e:
+            # 降级：直接返回工具结果
+            yield StreamChunk(type="text", content=f"工具执行结果:\n{results_text}")
     
     async def _handle_simple_task(
         self,
@@ -448,7 +693,23 @@ class CursorStyleOrchestrator:
         # 选择工具
         yield StreamChunk(type="thinking", content="🔧 选择合适的工具...")
         
-        selections = await self.tool_orchestrator.select_tools(message, max_tools=3)
+        # 优先使用意图中建议的工具
+        selections = []
+        if intent.suggested_tools:
+            for tool_name in intent.suggested_tools:
+                if tool_name in self.tool_orchestrator.tools:
+                    # 从消息中提取参数
+                    args = self._extract_tool_args(tool_name, message, intent)
+                    selections.append(ToolSelection(
+                        tool_name=tool_name,
+                        confidence=0.9,
+                        reason=f"意图建议使用 {tool_name}",
+                        arguments=args,
+                    ))
+        
+        # 如果意图没有建议工具，则使用关键词匹配
+        if not selections:
+            selections = await self.tool_orchestrator.select_tools(message, max_tools=3)
         
         if not selections:
             # 没有合适的工具，降级为普通回复
@@ -580,6 +841,88 @@ class CursorStyleOrchestrator:
         
         history = self.sessions[session_id].get("history", [])
         return history[-max_messages:]
+    
+    def _extract_tool_args(self, tool_name: str, message: str, intent: Intent) -> Dict[str, Any]:
+        """
+        从消息和意图中提取工具参数
+        
+        Args:
+            tool_name: 工具名称
+            message: 用户消息
+            intent: 识别的意图
+        
+        Returns:
+            工具参数字典
+        """
+        import re
+        args = {}
+        
+        # 提取路径参数 - 只匹配 ASCII 路径字符（不包含中文）
+        path_match = re.search(r'([/\\][a-zA-Z0-9_\-\.\/\\]+)', message)
+        
+        if tool_name == "list_directory":
+            if path_match:
+                args["path"] = path_match.group(1)
+            else:
+                args["path"] = "."  # 默认当前目录
+                
+        elif tool_name == "file_read_enhanced":
+            if path_match:
+                args["file_path"] = path_match.group(1)
+            # 从意图实体中获取
+            if intent.entities and "file_paths" in intent.entities:
+                paths = intent.entities["file_paths"]
+                if paths:
+                    args["file_path"] = paths[0]
+                    
+        elif tool_name == "shell_execute":
+            # 对于 shell 命令，提取引号内容或关键词后内容
+            cmd_match = re.search(r'[`\'\"](.*?)[`\'\"]', message)
+            if cmd_match:
+                args["command"] = cmd_match.group(1)
+                
+        elif tool_name == "env_info":
+            pass  # 无需参数
+            
+        elif tool_name == "process_list":
+            pass  # 无需参数
+        
+        return args
+    
+    def _get_tool_info_for_prompt(self) -> str:
+        """获取工具信息用于提示词"""
+        tool_lines = ["## 可用工具\n"]
+        
+        for name, meta in self.tool_orchestrator.metadata.items():
+            desc = meta.description[:80] if meta.description else "无描述"
+            tool_lines.append(f"- **{name}**: {desc}")
+        
+        tool_lines.append("\n如果用户需要使用这些功能，请告知用户你可以帮忙执行。")
+        return "\n".join(tool_lines)
+    
+    def _get_tool_info_for_react(self) -> str:
+        """获取工具信息用于 ReAct 模式（包含参数说明）"""
+        tool_lines = ["## 可用工具\n"]
+        
+        for name, meta in self.tool_orchestrator.metadata.items():
+            desc = meta.description if meta.description else "无描述"
+            tool_lines.append(f"### {name}")
+            tool_lines.append(f"描述: {desc}")
+            
+            # 添加参数说明
+            if meta.input_schema and "properties" in meta.input_schema:
+                params = []
+                for param_name, param_info in meta.input_schema["properties"].items():
+                    param_type = param_info.get("type", "string")
+                    param_desc = param_info.get("description", "")
+                    required = param_name in meta.input_schema.get("required", [])
+                    params.append(f"  - {param_name} ({param_type}{'*' if required else ''}): {param_desc}")
+                if params:
+                    tool_lines.append("参数:")
+                    tool_lines.extend(params)
+            tool_lines.append("")
+        
+        return "\n".join(tool_lines)
     
     async def _save_conversation(
         self,

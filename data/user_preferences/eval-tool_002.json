@@ -1,0 +1,29 @@
+{
+  "user_id": "eval-tool_002",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {
+    "file_read_enhanced": {
+      "use_count": 4,
+      "success_count": 4,
+      "last_used": "2026-01-05T17:25:23.439510"
+    },
+    "list_directory": {
+      "use_count": 4,
+      "success_count": 4,
+      "last_used": "2026-01-05T17:25:23.440638"
+    }
+  },
+  "favorite_tools": [
+    "file_read_enhanced",
+    "list_directory"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 2,
+  "avg_message_length": 22.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:05:22.398264",
+  "last_active": "2026-01-05T17:25:23.438078"
+}

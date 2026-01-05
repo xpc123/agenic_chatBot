@@ -1,0 +1,29 @@
+{
+  "user_id": "test-qa_003-1767601527",
+  "response_style": "detailed",
+  "language": "mixed",
+  "tool_usage": {
+    "list_directory": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:25:40.665971"
+    },
+    "file_read_enhanced": {
+      "use_count": 2,
+      "success_count": 2,
+      "last_used": "2026-01-05T16:25:40.666806"
+    }
+  },
+  "favorite_tools": [
+    "list_directory",
+    "file_read_enhanced"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 1,
+  "avg_message_length": 38.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T16:25:27.413878",
+  "last_active": "2026-01-05T16:25:40.664608"
+}

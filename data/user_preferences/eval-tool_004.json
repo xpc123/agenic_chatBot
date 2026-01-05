@@ -1,0 +1,29 @@
+{
+  "user_id": "eval-tool_004",
+  "response_style": "detailed",
+  "language": "chinese",
+  "tool_usage": {
+    "env_info": {
+      "use_count": 4,
+      "success_count": 4,
+      "last_used": "2026-01-05T17:25:55.256742"
+    },
+    "process_list": {
+      "use_count": 4,
+      "success_count": 4,
+      "last_used": "2026-01-05T17:25:55.257681"
+    }
+  },
+  "favorite_tools": [
+    "env_info",
+    "process_list"
+  ],
+  "domains": [],
+  "topics": {},
+  "total_messages": 2,
+  "avg_message_length": 11.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T17:05:44.112616",
+  "last_active": "2026-01-05T17:25:55.254946"
+}

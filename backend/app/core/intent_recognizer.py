@@ -208,6 +208,68 @@ class IntentRecognizer:
                 confidence=0.95,
             )
         
+        # Shell 命令执行 - 检测执行命令的意图
+        shell_keywords = ["执行命令", "运行命令", "execute", "run command", "shell", "终端", "terminal"]
+        has_command = bool(re.search(r'[`\'\"](.*?)[`\'\"]', message))  # 检测引号包裹的命令
+        if any(kw in message_lower for kw in shell_keywords) or (has_command and "命令" in message):
+            return Intent(
+                surface_intent="执行Shell命令",
+                deep_intent="用户想要执行系统命令",
+                task_type=TaskType.ACTION,
+                required_capabilities=[RequiredCapability.TOOLS],
+                suggested_tools=["shell_execute"],
+                complexity="medium",
+                confidence=0.95,
+            )
+        
+        # 文件/目录操作 - 检测路径或文件相关关键词
+        path_match = re.search(r'([/\\][a-zA-Z0-9_\-\.\/\\]+)', message)
+        has_path = bool(path_match)
+        path_str = path_match.group(1) if path_match else ""
+        
+        # 判断是文件还是目录
+        is_file_path = bool(re.search(r'\.\w+$', path_str))  # 有扩展名则是文件
+        
+        file_keywords = ["文件", "目录", "读取", "查看", "分析项目", "项目结构", 
+                        "file", "directory", "folder", "read", "list", "analyze"]
+        if has_path or any(kw in message_lower for kw in file_keywords):
+            # 决定具体工具
+            tools = []
+            if is_file_path:
+                # 是文件，使用 file_read
+                tools.append("file_read_enhanced")
+            elif has_path:
+                # 是目录或路径不确定
+                if any(kw in message_lower for kw in ["读取", "内容", "read", "查看文件", "代码"]):
+                    tools.append("file_read_enhanced")
+                tools.append("list_directory")
+            else:
+                tools.extend(["list_directory", "file_read_enhanced"])
+            
+            return Intent(
+                surface_intent="文件/项目操作",
+                deep_intent="用户想要查看或分析文件系统内容",
+                task_type=TaskType.ANALYSIS,
+                required_capabilities=[RequiredCapability.TOOLS],
+                suggested_tools=tools,
+                complexity="medium",
+                is_multi_step=True,
+                confidence=0.92,
+            )
+        
+        # 系统/环境查询
+        env_keywords = ["环境", "进程", "运行中", "系统", "environment", "process", "running"]
+        if any(kw in message_lower for kw in env_keywords):
+            return Intent(
+                surface_intent="系统信息查询",
+                deep_intent="用户想了解系统或环境信息",
+                task_type=TaskType.QUERY,
+                required_capabilities=[RequiredCapability.TOOLS],
+                suggested_tools=["env_info", "process_list"],
+                complexity="low",
+                confidence=0.92,
+            )
+        
         return None
     
     def _enhanced_rule_match(

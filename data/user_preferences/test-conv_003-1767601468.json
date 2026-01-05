@@ -1,0 +1,15 @@
+{
+  "user_id": "test-conv_003-1767601468",
+  "response_style": "detailed",
+  "language": "chinese",
+  "tool_usage": {},
+  "favorite_tools": [],
+  "domains": [],
+  "topics": {},
+  "total_messages": 1,
+  "avg_message_length": 6.0,
+  "prefers_code_blocks": true,
+  "prefers_emojis": true,
+  "created_at": "2026-01-05T16:24:33.214279",
+  "last_active": "2026-01-05T16:24:33.214286"
+}
