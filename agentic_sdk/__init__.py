@@ -48,17 +48,33 @@ __version__ = "0.1.0"
 __author__ = "Agentic ChatBot Team"
 
 from .chatbot import ChatBot
-from .config import ChatConfig
+from .config import ChatConfig, LLMConfig, RAGConfig, MemoryConfig, SkillsConfig, MCPConfig
 from .types import ChatResponse, ChatChunk, ToolCall, MessageRole
+from .settings import SettingsManager, IndexingStatus, SkillInfo, RuleInfo, MCPServerInfo
+from .remote_client import RemoteClient
 
 __all__ = [
     # 核心
     "ChatBot",
-    "ChatConfig", 
+    "ChatConfig",
+    "RemoteClient",
+    # 配置
+    "LLMConfig",
+    "RAGConfig", 
+    "MemoryConfig",
+    "SkillsConfig",
+    "MCPConfig",
+    # 类型
     "ChatResponse",
     "ChatChunk",
     "ToolCall",
     "MessageRole",
+    # 设置管理（对应 Settings UI）
+    "SettingsManager",
+    "IndexingStatus",
+    "SkillInfo",
+    "RuleInfo",
+    "MCPServerInfo",
     # 服务器（可选）
     "create_server",
     "run_server",

@@ -302,10 +302,15 @@ python run.py
 ### 🎯 方式二：3 行代码集成
 
 ```python
-# 在你的 Python 应用中
-from chatbot_sdk import ChatBot
+# 使用统一 SDK (支持嵌入模式和远程模式)
+from agentic_sdk import ChatBot
 
+# 嵌入模式（直接调用后端，无需启动服务）
+bot = ChatBot()
+
+# 或远程模式（通过 HTTP API）
 bot = ChatBot(base_url="http://localhost:8000")
+
 response = bot.chat("帮我分析 @src/user.py 这个文件")
 
 # 🎉 完成！你的应用现在有了 Cursor 级别的 AI 助手
@@ -318,16 +323,16 @@ response = bot.chat("帮我分析 @src/user.py 这个文件")
 
 ```python
 from flask import Flask, request, jsonify
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot
 
 app = Flask(__name__)
-bot = ChatBot(base_url="http://localhost:8000")
+bot = ChatBot()  # 嵌入模式
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
     message = request.json.get('message')
     response = bot.chat(message)
-    return jsonify({'response': response})
+    return jsonify({'response': response.text})
 
 if __name__ == '__main__':
     app.run(port=5000)
@@ -340,10 +345,10 @@ if __name__ == '__main__':
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot
 
 app = FastAPI()
-bot = ChatBot(base_url="http://localhost:8000")
+bot = ChatBot()  # 嵌入模式
 
 class Query(BaseModel):
     message: str
@@ -351,7 +356,7 @@ class Query(BaseModel):
 @app.post("/api/chat")
 async def chat(query: Query):
     response = bot.chat(query.message)
-    return {"response": response}
+    return {"response": response.text}
 ```
 </details>
 
@@ -395,16 +400,19 @@ function ChatBot() {
 ### 基础用法
 
 ```python
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot
 
-# 1. 初始化
-bot = ChatBot(base_url="http://localhost:8000")
+# 1. 初始化（嵌入模式 - 直接调用后端）
+bot = ChatBot()
+
+# 或远程模式
+# bot = ChatBot(base_url="http://localhost:8000")
 
 # 2. 发送消息
 response = bot.chat("你好，介绍一下你的功能")
 
 # 3. 完成！
-print(response)
+print(response.text)
       {"name": "database", "type": "sqlite", "config": {...}}
     ]
   }
@@ -420,33 +428,33 @@ print(response)
 #### 1. 安装 SDK
 
 ```bash
-pip install -e sdk/python
+# SDK 已包含在项目中，无需额外安装
+# 只需确保项目在 Python 路径中
 ```
 
 #### 2. 初始化并调用
 
 ```python
-from chatbot_sdk import create_client
+from agentic_sdk import ChatBot, ChatConfig
 
-# 创建客户端
-client = create_client(
-    app_id="your_app",
-    app_secret="your_secret",
-    base_url="http://localhost:8000",
-    workspace_root="/path/to/workspace"
-)
+# 嵌入模式（推荐 - 直接调用后端，无需启动服务）
+bot = ChatBot()
 
-# 初始化
-client.initialize()
+# 或远程模式（需要先启动后端服务）
+bot = ChatBot(base_url="http://localhost:8000")
 
 # 聊天
-response = client.chat("你好，请帮我分析数据")
-print(response)
+response = bot.chat("你好，请帮我分析数据")
+print(response.text)
 
 # 流式输出
-for chunk in client.chat("生成报告", stream=True):
-    if chunk["type"] == "text":
-        print(chunk["content"], end="")
+for chunk in bot.chat_stream("生成报告"):
+    print(chunk.content, end="", flush=True)
+
+# Settings API（对应 Gradio 设置界面）
+bot.sync_index()                      # 同步索引
+bot.add_rule("...", "user")           # 添加规则
+bot.toggle_skill("code_review", True) # 切换技能
 ```
 
 #### 3. 更多示例
@@ -634,45 +642,65 @@ curl -X POST http://localhost:8000/api/v1/chat/message \
 ## 📦 项目结构
 
 ```
-backend/
-├── app/
-│   ├── api/              # API 路由（chat, documents, tools）
-│   ├── core/             # 核心逻辑（agent, planner, executor）
-│   ├── llm/              # LLM 客户端封装
-│   ├── mcp/              # MCP 协议实现
-│   ├── rag/              # RAG 检索系统
-│   ├── models/           # 数据模型
-│   ├── exceptions.py     # ✨ 自定义异常
-│   ├── dependencies.py   # ✨ 依赖注入
-│   ├── config.py         # 配置管理
-│   └── main.py           # FastAPI 应用
-├── config/               # 配置文件
-├── data/                 # 数据目录（运行时生成）
-├── logs/                 # 日志
-├── tests/                # 测试
-└── requirements.txt      # Python 依赖
+agenic_chatBot/
+├── agentic_sdk/          # 🆕 统一 SDK（支持嵌入/远程双模式）
+│   ├── __init__.py       # 包入口
+│   ├── chatbot.py        # ChatBot 主类（双模式）
+│   ├── config.py         # 配置类
+│   ├── types.py          # 类型定义
+│   ├── settings.py       # Settings 管理器
+│   ├── remote_client.py  # 远程客户端（HTTP API）
+│   └── README.md         # SDK 文档
+├── backend/
+│   ├── app/
+│   │   ├── api/          # API 路由（chat, documents, tools, settings）
+│   │   ├── core/         # 核心逻辑（orchestrator, planner, executor）
+│   │   ├── llm/          # LLM 客户端封装
+│   │   ├── mcp/          # MCP 协议实现
+│   │   ├── rag/          # RAG 检索系统
+│   │   ├── models/       # 数据模型
+│   │   └── config.py     # 配置管理
+│   ├── data/             # 数据目录
+│   └── requirements.txt  # Python 依赖
+├── scripts/              # 启动脚本
+│   └── app.py            # Gradio UI（使用统一 SDK）
+├── docs/                 # 文档
+├── examples/             # 示例代码
+└── tests/                # 测试
 ```
 
 ---
 
 ## 🔌 集成示例
 
-### Python SDK
+### Python SDK（统一 SDK）
 
 ```python
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot, ChatConfig
 
-bot = ChatBot(api_url="http://localhost:8000")
+# 嵌入模式（推荐）
+bot = ChatBot()
+
+# 远程模式
+bot = ChatBot(base_url="http://localhost:8000")
 
 # 简单对话
 response = bot.chat("介绍一下你的功能")
+print(response.text)
 
-# 启用 RAG
-response = bot.chat("总结这份报告", use_rag=True)
+# RAG 自动启用（如果配置了）
+response = bot.chat("总结这份报告")
+print(response.sources)  # 显示来源
 
 # 流式响应
-for chunk in bot.stream("写一个排序算法"):
-    print(chunk, end="")
+for chunk in bot.chat_stream("写一个排序算法"):
+    print(chunk.content, end="", flush=True)
+
+# Settings API
+status = bot.get_index_status()       # 获取索引状态
+bot.sync_index(force=True)            # 强制重建索引
+skills = bot.list_skills()            # 列出技能
+bot.toggle_skill("code_review", True) # 启用技能
 ```
 
 ### TypeScript
@@ -734,7 +762,7 @@ docker-compose up -d
 | 文档 | 说明 |
 |------|------|
 | [COMPETITORS.md](docs/COMPETITORS.md) | 竞品分析 |
-| [SDK README](sdk/python/README.md) | Python SDK 文档 |
+| [agentic_sdk README](agentic_sdk/README.md) | 🆕 统一 SDK 文档（嵌入/远程双模式） |
 | [Examples](examples/README.md) | 集成示例代码 |
 
 ---

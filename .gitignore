@@ -1,2 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
 logs/
+*.log
+
+# Data
+data/
+.cache/
+.agentic_chatbot/
+
+# Scripts data
 scripts/data/
+scripts/__pycache__/
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Environment
+.env
+*.env.local
+
+# OS
+.DS_Store
+Thumbs.db

@@ -189,8 +189,8 @@ class Settings(BaseSettings):
     JEDAI_AWS_REGION: str = "us-west-2"
 
     # JedAI Embedding 配置
-    JEDAI_EMBEDDING_PROVIDER: str = "gcp"  # http, aws, gcp, azure
-    JEDAI_EMBEDDING_MODEL: str = "text-embedding-005"
+    JEDAI_EMBEDDING_PROVIDER: str = "http"  # http, aws, gcp, azure
+    JEDAI_EMBEDDING_MODEL: str = "JEDAI_MODEL_INT_EMBED_2"  # JedAI 内部模型
     JEDAI_EMBEDDING_URL: Optional[str] = None  # 如果需要自定义 embedding URL
     
     # JedAI Rerank 配置
@@ -205,8 +205,8 @@ class Settings(BaseSettings):
 
     # Embedding配置 (通用)
     EMBEDDING_PROVIDER: str = "jedai"  # openai, jedai, local
-    EMBEDDING_MODEL: str = "text-embedding-005"
-    EMBEDDING_DIMENSION: int = 768  # GCP text-embedding-005 默认维度
+    EMBEDDING_MODEL: str = "JEDAI_MODEL_INT_EMBED_2"  # JedAI 内部模型
+    EMBEDDING_DIMENSION: int = 768  # JedAI 默认维度
     
     # Rerank 配置 (通用)
     RERANK_ENABLED: bool = True

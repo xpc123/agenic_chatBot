@@ -41,6 +41,11 @@ from .planner import AgentPlanner
 from .memory import MemoryManager
 from .skills import SkillsManager, get_skills_manager
 
+# Workspace 自动索引
+from ..rag.workspace_indexer import (
+    WorkspaceIndexer, get_workspace_indexer, auto_index_workspace, IndexingStatus
+)
+
 
 @dataclass
 class ChatResponse:
@@ -117,6 +122,8 @@ class CursorStyleOrchestrator:
         enable_skills: bool = True,
         enable_memory: bool = True,
         enable_preferences: bool = True,
+        enable_auto_index: bool = True,
+        workspace_path: Optional[str] = None,
         max_context_tokens: int = 8000,
     ):
         """
@@ -129,6 +136,8 @@ class CursorStyleOrchestrator:
             enable_skills: 是否启用技能系统
             enable_memory: 是否启用记忆
             enable_preferences: 是否启用用户偏好学习
+            enable_auto_index: 是否启用工作区自动索引
+            workspace_path: 工作区路径（用于自动索引）
             max_context_tokens: 最大上下文 Token 数
         """
         self.llm = llm_client
@@ -139,6 +148,7 @@ class CursorStyleOrchestrator:
         self.enable_skills = enable_skills
         self.enable_memory = enable_memory
         self.enable_preferences = enable_preferences
+        self.enable_auto_index = enable_auto_index
         
         # 初始化核心组件
         self.intent_recognizer = get_intent_recognizer(llm_client)
@@ -147,6 +157,11 @@ class CursorStyleOrchestrator:
         self.preference_manager = get_preference_manager() if enable_preferences else None
         self.memory_manager = MemoryManager() if enable_memory else None
         self.skill_manager = get_skills_manager() if enable_skills else None
+        
+        # Workspace 自动索引器
+        self.workspace_indexer: Optional[WorkspaceIndexer] = None
+        self._workspace_path = workspace_path
+        self._indexing_task: Optional[asyncio.Task] = None
         
         # 注册工具
         if tools:
@@ -158,8 +173,89 @@ class CursorStyleOrchestrator:
         logger.info(
             f"CursorStyleOrchestrator initialized: "
             f"RAG={enable_rag}, Skills={enable_skills}, "
-            f"Memory={enable_memory}, Preferences={enable_preferences}"
+            f"Memory={enable_memory}, Preferences={enable_preferences}, "
+            f"AutoIndex={enable_auto_index}"
         )
+    
+    async def initialize_workspace_index(
+        self,
+        workspace_path: Optional[str] = None,
+        priority_only: bool = True,
+        background: bool = True,
+    ) -> Optional[IndexingStatus]:
+        """
+        初始化工作区索引
+        
+        Args:
+            workspace_path: 工作区路径，不提供则使用构造函数中的路径
+            priority_only: 是否只索引高优先级文件（推荐首次使用）
+            background: 是否在后台运行
+        
+        Returns:
+            如果非后台运行，返回索引状态；后台运行返回 None
+        """
+        if not self.enable_auto_index:
+            logger.info("Auto indexing is disabled")
+            return None
+        
+        path = workspace_path or self._workspace_path
+        if not path:
+            logger.warning("No workspace path provided for indexing")
+            return None
+        
+        try:
+            # 初始化索引器
+            self.workspace_indexer = get_workspace_indexer(path)
+            
+            if background:
+                # 后台索引
+                self._indexing_task = asyncio.create_task(
+                    self._background_index(priority_only)
+                )
+                logger.info(f"Started background indexing for: {path}")
+                return None
+            else:
+                # 同步索引
+                status = await self.workspace_indexer.index_workspace(
+                    priority_only=priority_only
+                )
+                logger.info(f"Workspace indexing complete: {status.indexed_files} files indexed")
+                return status
+                
+        except Exception as e:
+            logger.error(f"Failed to initialize workspace index: {e}")
+            return None
+    
+    async def _background_index(self, priority_only: bool = True):
+        """后台索引任务"""
+        try:
+            if self.workspace_indexer:
+                # 第一阶段：快速索引高优先级文件
+                await self.workspace_indexer.index_workspace(priority_only=True)
+                logger.info("Phase 1: Priority files indexed")
+                
+                # 第二阶段：如果不是只索引高优先级，则继续索引其他文件
+                if not priority_only:
+                    await asyncio.sleep(5)  # 稍等一下，避免影响用户体验
+                    await self.workspace_indexer.index_workspace(priority_only=False)
+                    logger.info("Phase 2: All files indexed")
+                    
+        except asyncio.CancelledError:
+            logger.info("Background indexing cancelled")
+        except Exception as e:
+            logger.error(f"Background indexing failed: {e}")
+    
+    def get_indexing_status(self) -> Optional[IndexingStatus]:
+        """获取索引状态"""
+        if self.workspace_indexer:
+            return self.workspace_indexer.get_status()
+        return None
+    
+    def get_indexed_files(self) -> List[str]:
+        """获取已索引的文件列表"""
+        if self.workspace_indexer:
+            return self.workspace_indexer.get_indexed_files()
+        return []
     
     async def chat_stream(
         self,
@@ -363,9 +459,21 @@ class CursorStyleOrchestrator:
                 logger.warning(f"Memory retrieval failed: {e}")
         
         # 6. 对话历史
-        history = self._get_conversation_history(session_id)
+        history = self._get_conversation_history(session_id, include_tool_results=False)
         if history:
             cm.add_conversation_history(history, max_messages=5)
+        
+        # 7. 🆕 之前的工具调用结果（重要：让 AI 记住之前的操作）
+        tool_context = self.get_session_context_summary(session_id)
+        if tool_context:
+            cm.add(
+                content=tool_context,
+                source=ContextSource.SYSTEM,
+                title="之前的工具调用结果",
+            )
+            logger.info(f"Added tool context to session {session_id}: {len(tool_context)} chars")
+        else:
+            logger.debug(f"No tool context for session {session_id}")
         
         return cm.build()
     
@@ -375,7 +483,7 @@ class CursorStyleOrchestrator:
         context: str,
         session_id: str,
         user_id: str,
-        max_iterations: int = 5,
+        max_iterations: int = 10,
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         纯 ReAct 模式处理
@@ -416,15 +524,20 @@ Final Answer: [给用户的完整回复]
 
 ## 重要规则
 
-1. **每次只执行一个 Action**，等待 Observation 后再决定下一步
-2. **文件/目录操作**：用户提到路径时，使用 list_directory 或 file_read_enhanced
-3. **系统命令**：用户需要执行命令时，使用 shell_execute
-4. **永远不要说"我无法访问"**，你有工具可以访问文件系统
-5. **简单对话**（如问候、感谢）可以直接给出 Final Answer
+1. **优先使用上下文信息**：如果上下文中已有相关信息（如之前的工具调用结果），直接使用
+2. **每次只执行一个 Action**，等待 Observation 后再决定下一步
+3. **3-5 次工具调用后应给出答案**：探索 3-5 次后，基于已收集的信息给出 Final Answer
+4. **不要过度探索**：了解项目架构只需查看关键目录和文件，不需要遍历所有子目录
+5. **文件/目录操作**：使用 list_directory 或 file_read_enhanced
+6. **永远不要说"我无法访问"**，你有工具可以访问文件系统
+7. **简单对话**（如问候、感谢）可以直接给出 Final Answer
+8. **信息充足时直接回答**：有足够信息就给出 Final Answer，不要追求完美
 
-## 上下文信息
+## 上下文信息（包含之前的对话和工具调用结果）
 
 {context}
+
+**注意**：上下文中可能包含之前工具调用的结果，请优先利用这些信息，避免重复调用相同的工具。
 """
         
         # 对话历史（用于 ReAct 循环）
@@ -482,6 +595,15 @@ Final Answer: [给用户的完整回复]
                             type="tool_result",
                             content=f"{'✅' if success else '❌'} {tool_name}",
                             metadata={"tool": tool_name, "success": success},
+                        )
+                        
+                        # 🆕 保存工具结果到会话记忆
+                        await self._save_tool_result(
+                            session_id=session_id,
+                            tool_name=tool_name,
+                            args=args,
+                            result=output_str,
+                            success=success,
                         )
                         
                         # 将结果添加到对话历史，继续 ReAct 循环
@@ -834,13 +956,76 @@ Final Answer: [给用户的完整回复]
         self,
         session_id: str,
         max_messages: int = 10,
+        include_tool_results: bool = True,
     ) -> List[Dict[str, str]]:
-        """获取对话历史"""
+        """
+        获取对话历史
+        
+        Args:
+            session_id: 会话 ID
+            max_messages: 最大消息数
+            include_tool_results: 是否包含工具调用结果
+        
+        Returns:
+            格式化的对话历史列表
+        """
         if session_id not in self.sessions:
-            self.sessions[session_id] = {"history": []}
+            self.sessions[session_id] = {"history": [], "tool_results": []}
         
         history = self.sessions[session_id].get("history", [])
-        return history[-max_messages:]
+        
+        # 格式化历史记录
+        formatted_history = []
+        for item in history[-max_messages:]:
+            role = item.get("role", "user")
+            content = item.get("content", "")
+            
+            if role == "tool" and include_tool_results:
+                # 工具结果作为系统信息
+                formatted_history.append({
+                    "role": "system",
+                    "content": f"[之前的工具调用结果]\n{content}",
+                })
+            elif role in ["user", "assistant"]:
+                formatted_history.append({
+                    "role": role,
+                    "content": content,
+                })
+        
+        return formatted_history
+    
+    def get_session_context_summary(
+        self,
+        session_id: str,
+    ) -> str:
+        """
+        获取会话上下文摘要（用于提供给 LLM 作为背景知识）
+        
+        Returns:
+            包含最近工具调用结果的摘要文本
+        """
+        if session_id not in self.sessions:
+            return ""
+        
+        tool_results = self.sessions[session_id].get("tool_results", [])
+        if not tool_results:
+            return ""
+        
+        # 生成摘要
+        summary_parts = ["## 之前的操作结果（你已经获取的信息，请直接使用，不要重复调用工具）\n"]
+        
+        for result in tool_results[-5:]:  # 最近 5 个
+            tool_name = result.get("tool", "unknown")
+            success = result.get("success", False)
+            args = result.get("args", {})
+            content = result.get("result", "")[:2000]  # 增加到 2000 字符
+            
+            status = "✅" if success else "❌"
+            args_str = ", ".join(f"{k}={v}" for k, v in args.items()) if args else ""
+            summary_parts.append(f"### {status} {tool_name}({args_str})")
+            summary_parts.append(f"```\n{content}\n```\n")
+        
+        return "\n".join(summary_parts)
     
     def _extract_tool_args(self, tool_name: str, message: str, intent: Intent) -> Dict[str, Any]:
         """
@@ -932,7 +1117,7 @@ Final Answer: [给用户的完整回复]
     ) -> None:
         """保存对话"""
         if session_id not in self.sessions:
-            self.sessions[session_id] = {"history": []}
+            self.sessions[session_id] = {"history": [], "tool_results": []}
         
         self.sessions[session_id]["history"].append({
             "role": role,
@@ -943,6 +1128,97 @@ Final Answer: [给用户的完整回复]
         # 限制历史长度
         if len(self.sessions[session_id]["history"]) > 50:
             self.sessions[session_id]["history"] = self.sessions[session_id]["history"][-50:]
+    
+    async def _save_tool_result(
+        self,
+        session_id: str,
+        tool_name: str,
+        args: Dict[str, Any],
+        result: str,
+        success: bool,
+    ) -> None:
+        """
+        保存工具调用结果到会话记忆
+        
+        这样 AI 可以在后续对话中"记住"之前工具调用的结果
+        """
+        if session_id not in self.sessions:
+            self.sessions[session_id] = {"history": [], "tool_results": []}
+        
+        if "tool_results" not in self.sessions[session_id]:
+            self.sessions[session_id]["tool_results"] = []
+        
+        # 保存工具结果
+        tool_record = {
+            "tool": tool_name,
+            "args": args,
+            "result": result[:2000] if len(result) > 2000 else result,  # 限制长度
+            "success": success,
+            "timestamp": datetime.now().isoformat(),
+        }
+        self.sessions[session_id]["tool_results"].append(tool_record)
+        
+        # 同时添加到对话历史（作为上下文）
+        summary = self._summarize_tool_result(tool_name, args, result, success)
+        self.sessions[session_id]["history"].append({
+            "role": "tool",
+            "tool_name": tool_name,
+            "content": summary,
+            "timestamp": datetime.now().isoformat(),
+        })
+        
+        # 限制工具结果历史长度
+        if len(self.sessions[session_id]["tool_results"]) > 20:
+            self.sessions[session_id]["tool_results"] = self.sessions[session_id]["tool_results"][-20:]
+        
+        logger.debug(f"Tool result saved: {tool_name} -> {success}")
+    
+    def _summarize_tool_result(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        result: str,
+        success: bool,
+    ) -> str:
+        """生成工具结果的摘要（用于对话历史）"""
+        status = "成功" if success else "失败"
+        
+        # 根据工具类型生成摘要 - 保留足够的信息供后续使用
+        if tool_name == "list_directory":
+            path = args.get("path", ".")
+            # 提取目录/文件列表
+            lines = result.strip().split("\n")
+            count = len([l for l in lines if l.strip()])
+            return f"[工具: {tool_name}] 列出 {path} 目录，包含 {count} 个项目:\n{result[:2000]}"
+        
+        elif tool_name == "file_read_enhanced":
+            path = args.get("path", "") or args.get("file_path", "")
+            lines = result.count("\n") + 1
+            return f"[工具: {tool_name}] 读取文件 {path} ({lines} 行):\n{result[:2000]}"
+        
+        elif tool_name == "shell_execute":
+            cmd = args.get("command", "")
+            return f"[工具: {tool_name}] 执行命令 '{cmd[:50]}...' {status}:\n{result[:1500]}"
+        
+        elif tool_name == "codebase_search":
+            query = args.get("query", "")
+            return f"[工具: {tool_name}] 搜索 '{query}' {status}:\n{result[:1500]}"
+        
+        else:
+            # 通用摘要
+            return f"[工具: {tool_name}] {status}:\n{result[:1200]}"
+    
+    def _get_recent_tool_results(
+        self,
+        session_id: str,
+        max_results: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """获取最近的工具调用结果"""
+        if session_id not in self.sessions:
+            return []
+        
+        tool_results = self.sessions[session_id].get("tool_results", [])
+        return tool_results[-max_results:]
     
     def clear_session(self, session_id: str) -> None:
         """清除会话"""

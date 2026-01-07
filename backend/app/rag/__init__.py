@@ -6,6 +6,12 @@ from .document_processor import DocumentProcessor
 from .embeddings import EmbeddingGenerator, embedding_generator
 from .vector_store import VectorStore, vector_store
 from .retriever import RAGRetriever, retriever
+from .workspace_indexer import (
+    WorkspaceIndexer,
+    get_workspace_indexer,
+    auto_index_workspace,
+    IndexingStatus,
+)
 
 __all__ = [
     "DocumentProcessor",
@@ -15,4 +21,9 @@ __all__ = [
     "vector_store",
     "RAGRetriever",
     "retriever",
+    # Workspace 自动索引
+    "WorkspaceIndexer",
+    "get_workspace_indexer",
+    "auto_index_workspace",
+    "IndexingStatus",
 ]

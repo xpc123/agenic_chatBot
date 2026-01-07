@@ -51,19 +51,44 @@ class ChatBot:
         response = bot.chat("计算 123 * 456")
     """
     
-    def __init__(self, config: Optional[ChatConfig] = None):
+    def __init__(
+        self,
+        config: Optional[ChatConfig] = None,
+        base_url: Optional[str] = None,
+    ):
         """
         初始化 ChatBot
         
         Args:
             config: 配置对象，默认使用标准配置
+            base_url: 远程服务器地址（快捷方式，等同于 ChatConfig.remote(base_url)）
+        
+        使用方式::
+        
+            # 嵌入模式（默认）
+            bot = ChatBot()
+            
+            # 远程模式 - 方式1
+            bot = ChatBot(base_url="http://localhost:8000")
+            
+            # 远程模式 - 方式2
+            config = ChatConfig.remote("http://localhost:8000")
+            bot = ChatBot(config)
         """
-        self.config = config or ChatConfig()
+        # 处理快捷参数
+        if base_url:
+            self.config = ChatConfig.remote(base_url=base_url)
+        else:
+            self.config = config or ChatConfig()
+        
         self._initialized = False
         self._custom_tools: List[Callable] = []
         self._conversations: Dict[str, Conversation] = {}
         
-        # 延迟初始化核心组件
+        # 远程客户端（远程模式使用）
+        self._remote_client = None
+        
+        # 延迟初始化核心组件（嵌入模式使用）
         self._orchestrator = None
         self._llm_client = None
         self._rag_retriever = None
@@ -73,7 +98,8 @@ class ChatBot:
         # 配置日志
         self._setup_logging()
         
-        logger.info(f"ChatBot SDK v{self._get_version()} initialized")
+        mode_str = "remote" if self.config.is_remote else "embedded"
+        logger.info(f"ChatBot SDK v{self._get_version()} initialized (mode={mode_str})")
     
     def _setup_logging(self):
         """配置日志"""
@@ -110,6 +136,24 @@ class ChatBot:
         if self._initialized:
             return
         
+        if self.config.is_remote:
+            self._init_remote_mode()
+        else:
+            self._init_embedded_mode()
+        
+        self._initialized = True
+    
+    def _init_remote_mode(self):
+        """初始化远程模式"""
+        from .remote_client import RemoteClient
+        
+        self._remote_client = RemoteClient(self.config)
+        self._remote_client.initialize()
+        
+        logger.info(f"ChatBot connected to remote server: {self.config.base_url}")
+    
+    def _init_embedded_mode(self):
+        """初始化嵌入模式"""
         # 添加 backend 到路径
         backend_path = Path(__file__).parent.parent / "backend"
         if str(backend_path) not in sys.path:
@@ -141,8 +185,7 @@ class ChatBot:
             enable_preferences=self.config.enable_preferences,
         )
         
-        self._initialized = True
-        logger.info("ChatBot core components initialized")
+        logger.info("ChatBot core components initialized (embedded mode)")
     
     def _get_or_create_session(self, session_id: Optional[str] = None) -> str:
         """获取或创建会话"""
@@ -177,8 +220,24 @@ class ChatBot:
             response = bot.chat("你好")
             print(response.text)
         """
-        # 运行异步版本
-        return asyncio.get_event_loop().run_until_complete(
+        self._ensure_initialized()
+        
+        # 远程模式直接调用
+        if self.config.is_remote:
+            return self._remote_client.chat(
+                message=message,
+                session_id=session_id,
+                use_rag=kwargs.get("use_rag", self.config.enable_rag),
+            )
+        
+        # 嵌入模式运行异步版本
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        return loop.run_until_complete(
             self.chat_async(message, session_id, **kwargs)
         )
     
@@ -215,19 +274,21 @@ class ChatBot:
         sources = []
         
         async for chunk in self._orchestrator.chat_stream(message, session_id):
+            metadata = chunk.metadata or {}
+            
             if chunk.type == "text":
                 text_parts.append(chunk.content or "")
             elif chunk.type == "tool_call":
                 tool_calls.append(ToolCall(
                     id=str(len(tool_calls)),
-                    name=chunk.tool_name or "",
-                    arguments=chunk.tool_args or {},
+                    name=metadata.get("tool", ""),
+                    arguments=metadata.get("args", {}),
                 ))
             elif chunk.type == "tool_result":
                 if tool_calls:
                     tool_calls[-1].result = chunk.content
             elif chunk.type == "rag_result":
-                sources.extend(chunk.metadata.get("sources", []))
+                sources.extend(metadata.get("sources", []))
         
         # 计算延迟
         latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -268,6 +329,18 @@ class ChatBot:
                 if chunk.is_text:
                     print(chunk.content, end="", flush=True)
         """
+        self._ensure_initialized()
+        
+        # 远程模式
+        if self.config.is_remote:
+            yield from self._remote_client.chat_stream(
+                message=message,
+                session_id=session_id,
+                use_rag=kwargs.get("use_rag", self.config.enable_rag),
+            )
+            return
+        
+        # 嵌入模式
         async def _stream():
             async for chunk in self.chat_stream_async(message, session_id, **kwargs):
                 yield chunk
@@ -524,14 +597,112 @@ class ChatBot:
         """列出所有会话"""
         return list(self._conversations.keys())
     
-    # ==================== Skills 管理 ====================
+    # ==================== Settings API ====================
+    # 这些方法对应 Gradio Settings UI 的功能
+    
+    # --- Indexing ---
+    
+    def get_index_status(self, workspace: str = ".") -> Dict[str, Any]:
+        """获取索引状态"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            return self._remote_client.get_indexing_status(workspace)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager(workspace)
+        status = manager.get_index_status()
+        return {
+            "total_files": status.total_files,
+            "indexed_files": status.indexed_files,
+            "is_complete": status.is_complete,
+        }
+    
+    def sync_index(self, force: bool = False, workspace: str = ".") -> Dict[str, Any]:
+        """同步索引"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            return self._remote_client.sync_index(force, workspace)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager(workspace)
+        status = manager.sync_index(force)
+        return {
+            "indexed_files": status.indexed_files,
+            "skipped_files": status.skipped_files,
+        }
+    
+    def clear_index(self, workspace: str = ".") -> bool:
+        """清除索引"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.clear_index(workspace)
+            return result.get("success", False)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager(workspace)
+        return manager.clear_index()
+    
+    # --- Rules ---
+    
+    def get_rules(self) -> Dict[str, List[str]]:
+        """获取所有规则"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            return self._remote_client.get_rules()
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        return {
+            "user_rules": manager.get_user_rules(),
+            "project_rules": manager.get_project_rules(),
+        }
+    
+    def add_rule(self, content: str, rule_type: str = "user") -> bool:
+        """添加规则"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.add_rule(content, rule_type)
+            return result.get("success", False)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        if rule_type == "user":
+            return manager.add_user_rule(content)
+        else:
+            return manager.add_project_rule(content)
+    
+    def remove_rule(self, content: str, rule_type: str = "user") -> bool:
+        """删除规则"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.remove_rule(content, rule_type)
+            return result.get("success", False)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        if rule_type == "user":
+            return manager.remove_user_rule(content)
+        else:
+            return manager.remove_project_rule(content)
+    
+    # --- Skills ---
     
     def list_skills(self) -> List[Dict[str, Any]]:
         """列出所有技能"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.list_skills()
+            return result.get("skills", [])
+        
         if not self.config.enable_skills:
             return []
-        
-        self._ensure_initialized()
         
         skills = []
         for skill in self._orchestrator.skill_manager.list_skills():
@@ -541,8 +712,139 @@ class ChatBot:
                 "description": skill.description,
                 "category": skill.category,
                 "triggers": skill.triggers,
+                "enabled": skill.enabled,
             })
         return skills
+    
+    def get_skill(self, skill_id: str) -> Optional[Dict[str, Any]]:
+        """获取技能详情"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            try:
+                return self._remote_client.get_skill(skill_id)
+            except Exception:
+                return None
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        skill = manager.get_skill(skill_id)
+        if skill:
+            return {
+                "id": skill.id,
+                "name": skill.name,
+                "description": skill.description,
+                "triggers": skill.triggers,
+                "enabled": skill.enabled,
+            }
+        return None
+    
+    def toggle_skill(self, skill_id: str, enabled: bool) -> bool:
+        """启用/禁用技能"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.toggle_skill(skill_id, enabled)
+            return result.get("success", False)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        return manager.toggle_skill(skill_id, enabled)
+    
+    def create_skill(
+        self,
+        skill_id: str,
+        name: str,
+        description: str,
+        instructions: str,
+        triggers: List[str],
+        category: str = "custom",
+    ) -> bool:
+        """创建自定义技能"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.create_skill(
+                skill_id, name, description, instructions, triggers, category
+            )
+            return result.get("success", False)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        return manager.create_skill(
+            skill_id, name, description, instructions, triggers, category
+        )
+    
+    def delete_skill(self, skill_id: str) -> bool:
+        """删除技能"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.delete_skill(skill_id)
+            return result.get("success", False)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        return manager.delete_skill(skill_id)
+    
+    # --- MCP Servers ---
+    
+    def list_mcp_servers(self) -> List[Dict[str, Any]]:
+        """获取 MCP 服务器列表"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.list_mcp_servers()
+            return result.get("servers", [])
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        return [
+            {"name": s.name, "type": s.server_type, "url": s.url}
+            for s in manager.list_mcp_servers()
+        ]
+    
+    def add_mcp_server(
+        self,
+        name: str,
+        server_type: str,
+        url: Optional[str] = None,
+    ) -> bool:
+        """添加 MCP 服务器"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.add_mcp_server(name, server_type, url)
+            return result.get("success", False)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        return manager.add_mcp_server(name, server_type, url)
+    
+    def remove_mcp_server(self, name: str) -> bool:
+        """删除 MCP 服务器"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            result = self._remote_client.remove_mcp_server(name)
+            return result.get("success", False)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager()
+        return manager.remove_mcp_server(name)
+    
+    # --- Summary ---
+    
+    def get_settings_summary(self, workspace: str = ".") -> Dict[str, Any]:
+        """获取设置摘要"""
+        self._ensure_initialized()
+        
+        if self.config.is_remote:
+            return self._remote_client.get_settings_summary(workspace)
+        
+        from .settings import SettingsManager
+        manager = SettingsManager(workspace)
+        return manager.get_summary()
     
     # ==================== 上下文管理器 ====================
     

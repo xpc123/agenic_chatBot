@@ -30,28 +30,59 @@ chmod +x quick_install.csh
 
 ---
 
-## 🎯 方式二：3 行代码集成
+## 🎯 方式二：3 行代码集成（使用统一 SDK）
 
-### 1. 启动后端服务
-
-```bash
-cd backend
-source venv/bin/activate  # 或 activate.csh
-python run.py
-```
-
-服务启动在 `http://localhost:8000`
-
-### 2. 在你的应用中集成（3 行代码）
+### 选项 A：嵌入模式（推荐 - 无需启动服务）
 
 ```python
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot
+
+# 嵌入模式 - 直接调用后端，无需启动服务
+bot = ChatBot()
+response = bot.chat("帮我分析 @src/user.py 这个文件")
+print(response.text)
+```
+
+### 选项 B：远程模式（需要启动服务）
+
+```bash
+# 1. 启动后端服务
+cd backend
+source venv/bin/activate
+python run.py
+# 服务启动在 http://localhost:8000
+```
+
+```python
+# 2. 远程调用
+from agentic_sdk import ChatBot
 
 bot = ChatBot(base_url="http://localhost:8000")
 response = bot.chat("帮我分析 @src/user.py 这个文件")
+print(response.text)
 ```
 
 **就这么简单！**你的应用现在已经有了 Cursor 级别的 AI 助手 🎉
+
+### 🆕 Settings API
+
+统一 SDK 还提供完整的 Settings API，对应 Gradio UI 的设置功能：
+
+```python
+# 索引管理
+bot.sync_index()                      # 同步索引
+bot.get_index_status()                # 获取索引状态
+
+# 规则管理
+bot.add_rule("Always respond in Chinese", "user")
+
+# 技能管理
+skills = bot.list_skills()            # 列出技能
+bot.toggle_skill("code_review", True) # 启用技能
+
+# 设置摘要
+summary = bot.get_settings_summary()
+```
 
 ---
 
@@ -107,16 +138,16 @@ for chunk in bot.chat_stream("写一个 Python Web 服务"):
 
 ```python
 from flask import Flask, request, jsonify
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot
 
 app = Flask(__name__)
-bot = ChatBot(base_url="http://localhost:8000")
+bot = ChatBot()  # 嵌入模式
 
 @app.route('/api/assistant', methods=['POST'])
 def assistant():
     message = request.json.get('message')
     response = bot.chat(message)
-    return jsonify({'response': response})
+    return jsonify({'response': response.text})
 
 if __name__ == '__main__':
     app.run(port=5000)
@@ -128,10 +159,10 @@ if __name__ == '__main__':
 # views.py
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot
 import json
 
-bot = ChatBot(base_url="http://localhost:8000")
+bot = ChatBot()  # 嵌入模式
 
 @csrf_exempt
 def assistant_view(request):
@@ -139,7 +170,7 @@ def assistant_view(request):
         data = json.loads(request.body)
         message = data.get('message')
         response = bot.chat(message)
-        return JsonResponse({'response': response})
+        return JsonResponse({'response': response.text})
 ```
 
 ### FastAPI 应用
@@ -147,10 +178,10 @@ def assistant_view(request):
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot
 
 app = FastAPI()
-bot = ChatBot(base_url="http://localhost:8000")
+bot = ChatBot()  # 嵌入模式
 
 class Query(BaseModel):
     message: str
@@ -158,7 +189,7 @@ class Query(BaseModel):
 @app.post("/api/assistant")
 async def assistant(query: Query):
     response = bot.chat(query.message)
-    return {"response": response}
+    return {"response": response.text}
 ```
 
 ### Express.js (Node.js)
@@ -223,56 +254,56 @@ function AIChatBot() {
 
 ## 🔧 高级配置
 
+### 使用配置对象
+
+```python
+from agentic_sdk import ChatBot, ChatConfig
+
+# 完整配置
+config = ChatConfig(
+    mode="embedded",      # 或 "remote"
+    enable_rag=True,
+    enable_memory=True,
+    enable_skills=True,
+    enable_mcp=True,
+)
+
+# 使用预设配置
+config = ChatConfig.full()      # 启用所有功能
+config = ChatConfig.minimal()   # 仅基础对话
+
+bot = ChatBot(config)
+```
+
 ### 自定义工具
 
 ```python
-from chatbot_sdk import ChatBot
+from agentic_sdk import ChatBot
 
-bot = ChatBot(
-    base_url="http://localhost:8000",
-    tools={
-        "database": {
-            "type": "mcp",
-            "config": "./mcp_servers/database_tools/server.py"
-        },
-        "email": {
-            "type": "mcp", 
-            "config": "./mcp_servers/email_tools/server.py"
-        }
-    }
-)
+bot = ChatBot()
+
+# 使用装饰器注册工具
+@bot.tool
+def get_weather(city: str) -> str:
+    """获取城市天气"""
+    return f"{city}: 晴，25°C"
+
+response = bot.chat("北京天气怎么样？")
 ```
 
-### 自定义 RAG 配置
+### 远程模式配置
 
 ```python
-bot = ChatBot(
-    base_url="http://localhost:8000",
-    rag_config={
-        "chunk_size": 500,
-        "chunk_overlap": 50,
-        "top_k": 5,
-        "score_threshold": 0.7
-    }
-)
-```
+from agentic_sdk import ChatBot, ChatConfig
 
-### 自定义上下文路径
-
-```python
-bot = ChatBot(
+# 远程模式需要指定服务器地址
+config = ChatConfig.remote(
     base_url="http://localhost:8000",
-    context_config={
-        "workspace_root": "/path/to/your/project",
-        "path_whitelist": [
-            "**/*.py",
-            "**/*.js",
-            "docs/**/*.md",
-            "config/**"
-        ],
-        "max_file_size": 1024 * 1024  # 1MB
-    }
+    app_id="my_app",        # 可选
+    app_secret="secret",    # 可选
 )
+
+bot = ChatBot(config)
 ```
 
 ---

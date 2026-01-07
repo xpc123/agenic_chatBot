@@ -72,13 +72,28 @@ class ChatConfig:
     
     使用方式::
     
+        # 嵌入模式（默认，直接调用后端）
+        config = ChatConfig(mode="embedded")
+        bot = ChatBot(config)
+        
+        # 远程模式（通过 HTTP API）
         config = ChatConfig(
-            enable_rag=True,
-            enable_memory=True,
-            llm=LLMConfig(model="gpt-4"),
+            mode="remote",
+            base_url="http://localhost:8000",
+            app_id="my_app",
+            app_secret="secret",
         )
         bot = ChatBot(config)
     """
+    # 运行模式: "embedded" 或 "remote"
+    mode: str = "embedded"
+    
+    # 远程模式配置
+    base_url: str = "http://localhost:8000"
+    app_id: str = "default"
+    app_secret: str = "default_secret"
+    timeout: int = 60
+    
     # 功能开关
     enable_rag: bool = True
     enable_memory: bool = True
@@ -136,6 +151,50 @@ class ChatConfig:
             enable_mcp=True,
             enable_preferences=True,
         )
+    
+    @classmethod
+    def remote(
+        cls,
+        base_url: str = "http://localhost:8000",
+        app_id: str = "default",
+        app_secret: str = "default_secret",
+    ) -> "ChatConfig":
+        """
+        远程模式配置
+        
+        使用方式::
+        
+            config = ChatConfig.remote("http://api.example.com:8000")
+            bot = ChatBot(config)
+        """
+        return cls(
+            mode="remote",
+            base_url=base_url,
+            app_id=app_id,
+            app_secret=app_secret,
+        )
+    
+    @classmethod
+    def embedded(cls) -> "ChatConfig":
+        """
+        嵌入模式配置（默认）
+        
+        使用方式::
+        
+            config = ChatConfig.embedded()
+            bot = ChatBot(config)
+        """
+        return cls(mode="embedded")
+    
+    @property
+    def is_remote(self) -> bool:
+        """是否为远程模式"""
+        return self.mode == "remote"
+    
+    @property
+    def is_embedded(self) -> bool:
+        """是否为嵌入模式"""
+        return self.mode == "embedded"
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChatConfig":
