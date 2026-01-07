@@ -46,6 +46,10 @@ from ..rag.workspace_indexer import (
     WorkspaceIndexer, get_workspace_indexer, auto_index_workspace, IndexingStatus
 )
 
+# Phase 3 & 4: 对话压缩和增强工具
+from .session_compactor import SessionCompactor, CompactionResult, get_session_compactor
+from .enhanced_tools import get_enhanced_tools
+
 
 @dataclass
 class ChatResponse:
@@ -158,6 +162,9 @@ class CursorStyleOrchestrator:
         self.memory_manager = MemoryManager() if enable_memory else None
         self.skill_manager = get_skills_manager() if enable_skills else None
         
+        # Phase 3: 会话压缩器
+        self.session_compactor = get_session_compactor(llm_client)
+        
         # Workspace 自动索引器
         self.workspace_indexer: Optional[WorkspaceIndexer] = None
         self._workspace_path = workspace_path
@@ -166,6 +173,10 @@ class CursorStyleOrchestrator:
         # 注册工具
         if tools:
             self.tool_orchestrator.register_many(tools)
+        
+        # Phase 4: 注册增强工具
+        enhanced_tools = get_enhanced_tools()
+        self.tool_orchestrator.register_many(enhanced_tools)
         
         # 会话状态
         self.sessions: Dict[str, Dict[str, Any]] = {}
@@ -1225,6 +1236,100 @@ Final Answer: [给用户的完整回复]
         if session_id in self.sessions:
             del self.sessions[session_id]
         logger.info(f"Session {session_id} cleared")
+    
+    async def compact_session(
+        self,
+        session_id: str,
+        force: bool = False,
+    ) -> Optional[CompactionResult]:
+        """
+        压缩会话历史
+        
+        当对话历史过长时，压缩为摘要以节省上下文空间。
+        
+        Args:
+            session_id: 会话 ID
+            force: 是否强制压缩
+        
+        Returns:
+            压缩结果，如果未压缩则返回 None
+        """
+        if session_id not in self.sessions:
+            return None
+        
+        history = self.sessions[session_id].get("history", [])
+        
+        if not history:
+            return None
+        
+        # 将历史转换为 ChatMessage 格式
+        from ..models.chat import ChatMessage, MessageRole
+        
+        messages = []
+        for item in history:
+            role_str = item.get("role", "user")
+            if role_str == "user":
+                role = MessageRole.USER
+            elif role_str == "assistant":
+                role = MessageRole.ASSISTANT
+            elif role_str == "tool":
+                role = MessageRole.SYSTEM
+            else:
+                role = MessageRole.SYSTEM
+            
+            messages.append(ChatMessage(
+                role=role,
+                content=item.get("content", ""),
+                timestamp=datetime.fromisoformat(item.get("timestamp", datetime.now().isoformat())),
+                metadata={"original_role": role_str},
+            ))
+        
+        # 执行压缩
+        compacted_messages, result = await self.session_compactor.compact(messages, force=force)
+        
+        if result.compacted_messages < result.original_messages:
+            # 更新会话历史
+            new_history = []
+            for msg in compacted_messages:
+                original_role = msg.metadata.get("original_role", "system") if msg.metadata else "system"
+                new_history.append({
+                    "role": original_role,
+                    "content": msg.content,
+                    "timestamp": msg.timestamp.isoformat() if msg.timestamp else datetime.now().isoformat(),
+                })
+            
+            self.sessions[session_id]["history"] = new_history
+            
+            logger.info(
+                f"Session {session_id} compacted: "
+                f"{result.original_messages} -> {result.compacted_messages} messages, "
+                f"{result.compression_ratio:.1%} reduction"
+            )
+        
+        return result
+    
+    async def auto_compact_if_needed(self, session_id: str) -> Optional[CompactionResult]:
+        """
+        如果需要则自动压缩
+        
+        在每次对话后调用，检查是否需要压缩
+        
+        Args:
+            session_id: 会话 ID
+        
+        Returns:
+            压缩结果，如果未压缩则返回 None
+        """
+        if session_id not in self.sessions:
+            return None
+        
+        history = self.sessions[session_id].get("history", [])
+        
+        # 简单检查：如果历史超过 30 条消息，触发压缩
+        if len(history) > 30:
+            return await self.compact_session(session_id)
+        
+        return None
     
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

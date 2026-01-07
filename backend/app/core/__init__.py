@@ -37,6 +37,17 @@ from .user_preferences import UserPreferenceManager, get_preference_manager
 from .skills import SkillsManager, Skill, get_skills_manager
 from .planner import AgentPlanner
 
+# Phase 3 & 4: 对话压缩和增强工具
+from .session_compactor import (
+    SessionCompactor, CompactionResult, CompactionConfig,
+    get_session_compactor, init_session_compactor,
+)
+from .enhanced_tools import (
+    SemanticCodeSearch, MultiFileEditor, BatchExecutor,
+    grep_enhanced, glob_search, semantic_code_search,
+    multi_file_edit, search_and_replace_all, get_enhanced_tools,
+)
+
 # 向后兼容别名
 AgentEngine = Orchestrator
 
@@ -75,4 +86,22 @@ __all__ = [
     "get_current_time",
     "get_builtin_tools",
     "get_basic_tools",
+    
+    # 对话压缩 (Phase 3)
+    "SessionCompactor",
+    "CompactionResult",
+    "CompactionConfig",
+    "get_session_compactor",
+    "init_session_compactor",
+    
+    # 增强工具 (Phase 4)
+    "SemanticCodeSearch",
+    "MultiFileEditor",
+    "BatchExecutor",
+    "grep_enhanced",
+    "glob_search",
+    "semantic_code_search",
+    "multi_file_edit",
+    "search_and_replace_all",
+    "get_enhanced_tools",
 ]
