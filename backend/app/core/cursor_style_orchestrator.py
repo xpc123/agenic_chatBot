@@ -297,12 +297,24 @@ class CursorStyleOrchestrator:
             # ==================== 1. 构建上下文 ====================
             yield StreamChunk(type="thinking", content="📚 收集相关信息...")
             
-            # 简单意图识别（仅用于上下文构建，不用于路由）
-            intent = await self.intent_recognizer.recognize(
-                message,
-                history=self._get_conversation_history(session_id),
-                available_tools=list(self.tool_orchestrator.tools.keys()),
-            )
+            # 🚀 优化：限制历史大小以提高性能
+            # 只使用最近 3 条历史进行意图识别（减少 LLM 输入）
+            recent_history = self._get_conversation_history(session_id, max_messages=3)
+            
+            # 🚀 优化：快速路径 - 简单消息跳过完整意图识别
+            is_simple = len(message) < 20 or message.endswith("?") or message.endswith("？")
+            
+            if is_simple:
+                # 使用快速意图识别（只用规则，不调用 LLM）
+                intent = self.intent_recognizer._quick_match(message) or \
+                         self.intent_recognizer._enhanced_rule_match(message, recent_history)
+            else:
+                # 完整意图识别
+                intent = await self.intent_recognizer.recognize(
+                    message,
+                    history=recent_history,  # 使用有限历史
+                    available_tools=list(self.tool_orchestrator.tools.keys()),
+                )
             
             task_type_str = intent.task_type.value if hasattr(intent.task_type, 'value') else str(intent.task_type)
             logger.info(f"Intent (for context): {task_type_str}")
@@ -509,22 +521,31 @@ class CursorStyleOrchestrator:
             except Exception as e:
                 logger.warning(f"Memory retrieval failed: {e}")
         
-        # 6. 对话历史
-        history = self._get_conversation_history(session_id, include_tool_results=False)
+        # 6. 对话历史 - 始终包含以支持上下文理解
+        # 即使是简单查询也需要对话历史来理解指代
+        max_hist = 10  # 保持较大的历史窗口
+        history = self._get_conversation_history(session_id, include_tool_results=False, max_messages=max_hist)
         if history:
-            cm.add_conversation_history(history, max_messages=5)
+            cm.add_conversation_history(history, max_messages=max_hist)
+            logger.info(f"Session {session_id}: Added {len(history)} history messages")
+            for h in history[-3:]:  # 打印最近3条用于调试
+                logger.debug(f"  {h.get('role', '?')}: {h.get('content', '')[:50]}...")
+        else:
+            logger.debug(f"Session {session_id}: No history found")
         
         # 7. 🆕 之前的工具调用结果（重要：让 AI 记住之前的操作）
-        tool_context = self.get_session_context_summary(session_id)
-        if tool_context:
-            cm.add(
-                content=tool_context,
-                source=ContextSource.SYSTEM,
-                title="之前的工具调用结果",
-            )
-            logger.info(f"Added tool context to session {session_id}: {len(tool_context)} chars")
+        # 🚀 优化：简单查询不加载工具历史
+        if intent.complexity != "low" or RequiredCapability.TOOLS in intent.required_capabilities:
+            tool_context = self.get_session_context_summary(session_id)
+            if tool_context:
+                cm.add(
+                    content=tool_context,
+                    source=ContextSource.SYSTEM,
+                    title="之前的工具调用结果",
+                )
+                logger.info(f"Added tool context to session {session_id}: {len(tool_context)} chars")
         else:
-            logger.debug(f"No tool context for session {session_id}")
+            logger.debug(f"Skipped tool context for simple query in session {session_id}")
         
         return cm.build()
     
@@ -584,11 +605,17 @@ Final Answer: [给用户的完整回复]
 7. **简单对话**（如问候、感谢）可以直接给出 Final Answer
 8. **信息充足时直接回答**：有足够信息就给出 Final Answer，不要追求完美
 
+## 安全准则
+
+1. **拒绝有害请求**：不编写恶意代码（如窃取密码、keylogger等）
+2. **隐私保护**：不透露其他用户的信息
+3. **诚实回答**：不确定时说"我不确定"，不编造信息
+
 ## 上下文信息（包含之前的对话和工具调用结果）
 
 {context}
 
-**注意**：上下文中可能包含之前工具调用的结果，请优先利用这些信息，避免重复调用相同的工具。
+**注意**：上下文中包含之前的对话历史和工具调用结果，请优先利用这些信息。如果用户询问之前提到过的信息（如名字、工作等），请从对话历史中查找答案。
 """
         
         # 对话历史（用于 ReAct 循环）

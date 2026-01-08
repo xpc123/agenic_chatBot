@@ -415,6 +415,28 @@ def list_directory(
         return f"❌ 列出目录失败: {str(e)}"
 
 
+# ==================== 时间工具 ====================
+
+@tool
+def get_current_time() -> str:
+    """
+    获取当前日期和时间。
+    
+    用于回答关于当前时间、日期的问题。
+    
+    Returns:
+        当前日期时间的格式化字符串
+    
+    Examples:
+        >>> get_current_time()
+        "2024-01-15 14:30:25 (星期一)"
+    """
+    now = datetime.now()
+    weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    weekday = weekdays[now.weekday()]
+    return f"{now.strftime('%Y-%m-%d %H:%M:%S')} ({weekday})"
+
+
 # ==================== 工具集合 ====================
 
 def get_practical_tools() -> List:
@@ -425,6 +447,7 @@ def get_practical_tools() -> List:
         实用工具列表
     """
     return [
+        get_current_time,
         shell_execute,
         file_write,
         file_read_enhanced,
@@ -438,6 +461,7 @@ def get_practical_tools() -> List:
 # ==================== 导出 ====================
 
 __all__ = [
+    "get_current_time",
     "shell_execute",
     "file_write",
     "file_read_enhanced",

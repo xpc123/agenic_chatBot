@@ -1,0 +1,100 @@
+{
+  "timestamp": "2026-01-08T17:13:12.933801",
+  "summary": {
+    "total": 7,
+    "passed": 6,
+    "pass_rate": 85.71428571428571,
+    "avg_score": 82.34222311640596,
+    "min_score": 54.46575758603691,
+    "max_score": 91.0
+  },
+  "by_category": {
+    "core": {
+      "count": 2,
+      "passed": 1,
+      "avg_score": 71.83287879301845,
+      "min_score": 54.46575758603691,
+      "max_score": 89.2
+    },
+    "context": {
+      "count": 1,
+      "passed": 1,
+      "avg_score": 83.55381642512077,
+      "min_score": 83.55381642512077,
+      "max_score": 83.55381642512077
+    },
+    "code": {
+      "count": 1,
+      "passed": 1,
+      "avg_score": 85.0701754385965,
+      "min_score": 85.0701754385965,
+      "max_score": 85.0701754385965
+    },
+    "reasoning": {
+      "count": 1,
+      "passed": 1,
+      "avg_score": 87.28475973350864,
+      "min_score": 87.28475973350864,
+      "max_score": 87.28475973350864
+    },
+    "safety": {
+      "count": 1,
+      "passed": 1,
+      "avg_score": 91.0,
+      "min_score": 91.0,
+      "max_score": 91.0
+    },
+    "performance": {
+      "count": 1,
+      "passed": 1,
+      "avg_score": 85.82105263157895,
+      "min_score": 85.82105263157895,
+      "max_score": 85.82105263157895
+    }
+  },
+  "by_dimension": {
+    "accuracy": {
+      "avg": 10.0,
+      "min": 10.0,
+      "max": 10.0
+    },
+    "completeness": {
+      "avg": 10.0,
+      "min": 10.0,
+      "max": 10.0
+    },
+    "relevance": {
+      "avg": 10.0,
+      "min": 10.0,
+      "max": 10.0
+    },
+    "fluency": {
+      "avg": 10.0,
+      "min": 10.0,
+      "max": 10.0
+    },
+    "helpfulness": {
+      "avg": 9.714285714285714,
+      "min": 9.0,
+      "max": 10.0
+    },
+    "context": {
+      "avg": 10.0,
+      "min": 10.0,
+      "max": 10.0
+    }
+  },
+  "latency": {
+    "avg_ms": 10489.56184727805,
+    "p50_ms": 7187.812328338623,
+    "max_ms": 24088.334798812866
+  },
+  "failed_cases": [
+    {
+      "id": "core-002",
+      "name": "知识问答",
+      "score": 54.46575758603691,
+      "errors": []
+    }
+  ]
+}

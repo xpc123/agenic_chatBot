@@ -277,6 +277,48 @@ class IntentRecognizer:
                 confidence=0.92,
             )
         
+        # 文件创建/写入意图
+        create_file_keywords = ["创建文件", "新建文件", "写入文件", "保存到", "create file", "write file", "新文件"]
+        write_keywords = ["创建", "新建", "写入", "保存"]
+        file_ext_match = re.search(r'\b\w+\.(py|txt|js|json|md|html|css|yaml|yml|xml|csv)\b', message_lower)
+        if any(kw in message_lower for kw in create_file_keywords) or (file_ext_match and any(kw in message_lower for kw in write_keywords)):
+            return Intent(
+                surface_intent="创建文件",
+                deep_intent="用户想要创建或写入新文件",
+                task_type=TaskType.ACTION,
+                required_capabilities=[RequiredCapability.TOOLS],
+                suggested_tools=["file_write"],
+                complexity="medium",
+                confidence=0.93,
+            )
+        
+        # 代码分析意图
+        code_analysis_keywords = ["分析代码", "时间复杂度", "空间复杂度", "代码质量", "代码审查", "analyze code", "code review"]
+        if any(kw in message_lower for kw in code_analysis_keywords):
+            return Intent(
+                surface_intent="代码分析",
+                deep_intent="用户想要分析代码的质量或性能",
+                task_type=TaskType.ANALYSIS,
+                required_capabilities=[RequiredCapability.CODE],
+                suggested_tools=[],
+                complexity="medium",
+                confidence=0.92,
+            )
+        
+        # 多步骤操作意图（包含"然后"、"接着"等连接词）
+        multi_step_keywords = ["然后", "接着", "之后", "再", "最后", "first", "then", "after", "finally"]
+        if sum(1 for kw in multi_step_keywords if kw in message_lower) >= 2:
+            return Intent(
+                surface_intent="多步骤操作",
+                deep_intent="用户想要执行多个连续操作",
+                task_type=TaskType.COMPLEX,
+                required_capabilities=[RequiredCapability.TOOLS],
+                suggested_tools=["file_read_enhanced", "file_write"],
+                complexity="high",
+                is_multi_step=True,
+                confidence=0.90,
+            )
+        
         return None
     
     def _enhanced_rule_match(
