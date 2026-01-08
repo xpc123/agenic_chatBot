@@ -24,7 +24,14 @@ import time
 from fastapi import Request, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from loguru import logger
-import jwt
+
+# JWT 是可选的
+try:
+    import jwt
+    JWT_AVAILABLE = True
+except ImportError:
+    JWT_AVAILABLE = False
+    jwt = None
 
 from ..config import settings
 
@@ -86,6 +93,10 @@ def verify_api_key(api_key: str) -> Optional[AuthenticatedUser]:
 
 def verify_jwt_token(token: str) -> Optional[AuthenticatedUser]:
     """验证 JWT Token"""
+    if not JWT_AVAILABLE:
+        logger.debug("JWT not available, skipping JWT authentication")
+        return None
+    
     jwt_secret = getattr(settings, 'JWT_SECRET', None)
     
     if not jwt_secret:
@@ -105,7 +116,7 @@ def verify_jwt_token(token: str) -> Optional[AuthenticatedUser]:
             permissions=payload.get("permissions", ["chat"]),
         )
         
-    except jwt.InvalidTokenError as e:
+    except Exception as e:
         logger.warning(f"Invalid JWT token: {e}")
         return None
 
@@ -258,8 +269,12 @@ def generate_jwt_token(
     user_id: str,
     permissions: list = None,
     expires_in: int = 3600,
-) -> str:
+) -> Optional[str]:
     """生成 JWT Token"""
+    if not JWT_AVAILABLE:
+        logger.warning("JWT not available, cannot generate token")
+        return None
+    
     jwt_secret = getattr(settings, 'JWT_SECRET', 'default_secret')
     
     payload = {

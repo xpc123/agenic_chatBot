@@ -35,6 +35,12 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "regression: 标记回归测试"
     )
+    config.addinivalue_line(
+        "markers", "benchmark: 标记性能基准测试"
+    )
+    config.addinivalue_line(
+        "markers", "unit: 标记单元测试"
+    )
 
 
 # ============================================================================
@@ -71,11 +77,17 @@ def chatbot():
     ChatBot 实例 (真实)
     
     用于集成测试和 E2E 测试
+    需要后端服务运行在 localhost:8000
     """
     from agentic_sdk import ChatBot
-    bot = ChatBot()
-    yield bot
-    # 清理
+    try:
+        bot = ChatBot(base_url="http://localhost:8000")
+        # 测试连接
+        bot.health_check()
+        yield bot
+        bot.close()
+    except Exception:
+        pytest.skip("Backend service not running")
 
 
 @pytest.fixture
