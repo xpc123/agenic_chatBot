@@ -216,9 +216,12 @@ class IntentRecognizer:
             )
         
         # Shell 命令执行 - 检测执行命令的意图
-        shell_keywords = ["执行命令", "运行命令", "execute", "run command", "shell", "终端", "terminal"]
+        shell_keywords = ["执行命令", "运行命令", "execute", "run command", "shell", "终端", "terminal", "执行 ", "运行 "]
+        # 检测常见 shell 命令
+        common_commands = ["ls", "cd", "pwd", "cat", "grep", "find", "ps", "top", "df", "du", "mkdir", "rm", "cp", "mv", "echo", "curl", "wget"]
+        has_shell_cmd = any(cmd in message_lower for cmd in common_commands)
         has_command = bool(re.search(r'[`\'\"](.*?)[`\'\"]', message))  # 检测引号包裹的命令
-        if any(kw in message_lower for kw in shell_keywords) or (has_command and "命令" in message):
+        if any(kw in message_lower for kw in shell_keywords) or has_shell_cmd or (has_command and "命令" in message):
             return Intent(
                 surface_intent="执行Shell命令",
                 deep_intent="用户想要执行系统命令",
@@ -230,15 +233,16 @@ class IntentRecognizer:
             )
         
         # 文件/目录操作 - 检测路径或文件相关关键词
-        path_match = re.search(r'([/\\][a-zA-Z0-9_\-\.\/\\]+)', message)
+        # 检测任何文件路径（包括不以 / 开头的相对路径）
+        path_match = re.search(r'([/\\]?[a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+|[/\\][a-zA-Z0-9_\-\.\/\\]+)', message)
         has_path = bool(path_match)
         path_str = path_match.group(1) if path_match else ""
         
         # 判断是文件还是目录
-        is_file_path = bool(re.search(r'\.\w+$', path_str))  # 有扩展名则是文件
+        is_file_path = bool(re.search(r'\.[a-zA-Z0-9]+$', path_str))  # 有扩展名则是文件
         
         file_keywords = ["文件", "目录", "读取", "查看", "分析项目", "项目结构", 
-                        "file", "directory", "folder", "read", "list", "analyze"]
+                        "file", "directory", "folder", "read", "list", "analyze", "内容"]
         if has_path or any(kw in message_lower for kw in file_keywords):
             # 决定具体工具
             tools = []
@@ -279,9 +283,11 @@ class IntentRecognizer:
         
         # 文件创建/写入意图
         create_file_keywords = ["创建文件", "新建文件", "写入文件", "保存到", "create file", "write file", "新文件"]
+        # 检测 "创建一个...文件" 或 "创建...叫xxx.py" 的模式
+        create_pattern = re.search(r'(创建|新建).*(文件|\.py|\.txt|\.js|\.json|\.md)', message_lower)
         write_keywords = ["创建", "新建", "写入", "保存"]
         file_ext_match = re.search(r'\b\w+\.(py|txt|js|json|md|html|css|yaml|yml|xml|csv)\b', message_lower)
-        if any(kw in message_lower for kw in create_file_keywords) or (file_ext_match and any(kw in message_lower for kw in write_keywords)):
+        if any(kw in message_lower for kw in create_file_keywords) or create_pattern or (file_ext_match and any(kw in message_lower for kw in write_keywords)):
             return Intent(
                 surface_intent="创建文件",
                 deep_intent="用户想要创建或写入新文件",

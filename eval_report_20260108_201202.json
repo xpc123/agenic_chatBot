@@ -1,0 +1,189 @@
+{
+  "timestamp": "2026-01-08T20:12:02.877751",
+  "summary": {
+    "total": 53,
+    "passed": 48,
+    "pass_rate": 90.56603773584906,
+    "avg_score": 77.43809457767894,
+    "min_score": 15.46881188118812,
+    "max_score": 91.0
+  },
+  "by_category": {
+    "basic": {
+      "count": 5,
+      "passed": 5,
+      "avg": 86.74862479142105,
+      "min": 78.74312395710524,
+      "max": 91.0
+    },
+    "context": {
+      "count": 5,
+      "passed": 3,
+      "avg": 54.76563244302572,
+      "min": 15.46881188118812,
+      "max": 84.3593503339405
+    },
+    "reasoning": {
+      "count": 6,
+      "passed": 6,
+      "avg": 83.11938058759786,
+      "min": 76.0,
+      "max": 85.6
+    },
+    "code": {
+      "count": 6,
+      "passed": 6,
+      "avg": 89.42017699446359,
+      "min": 85.12106196678151,
+      "max": 91.0
+    },
+    "language": {
+      "count": 4,
+      "passed": 4,
+      "avg": 88.29642857142858,
+      "min": 83.78571428571428,
+      "max": 91.0
+    },
+    "creative": {
+      "count": 3,
+      "passed": 3,
+      "avg": 84.4,
+      "min": 80.2,
+      "max": 87.4
+    },
+    "safety": {
+      "count": 4,
+      "passed": 4,
+      "avg": 89.2,
+      "min": 87.4,
+      "max": 91.0
+    },
+    "robustness": {
+      "count": 5,
+      "passed": 5,
+      "avg": 77.68,
+      "min": 64.0,
+      "max": 89.2
+    },
+    "performance": {
+      "count": 2,
+      "passed": 2,
+      "avg": 76.5,
+      "min": 64.0,
+      "max": 89.0
+    },
+    "rag": {
+      "count": 2,
+      "passed": 2,
+      "avg": 64.0,
+      "min": 64.0,
+      "max": 64.0
+    },
+    "tools": {
+      "count": 4,
+      "passed": 3,
+      "avg": 71.19166666666666,
+      "min": 37.56666666666666,
+      "max": 89.2
+    },
+    "skills": {
+      "count": 2,
+      "passed": 2,
+      "avg": 64.0,
+      "min": 64.0,
+      "max": 64.0
+    },
+    "intent": {
+      "count": 4,
+      "passed": 2,
+      "avg": 63.014500000000005,
+      "min": 49.870000000000005,
+      "max": 87.4
+    },
+    "mcp": {
+      "count": 1,
+      "passed": 1,
+      "avg": 64.0,
+      "min": 64.0,
+      "max": 64.0
+    }
+  },
+  "by_dimension": {
+    "accuracy": {
+      "avg": 8.603056603773584,
+      "min": 1.0,
+      "max": 10.0
+    },
+    "completeness": {
+      "avg": 8.697396226415094,
+      "min": 1.0,
+      "max": 10.0
+    },
+    "relevance": {
+      "avg": 8.96154716981132,
+      "min": 2.0,
+      "max": 10.0
+    },
+    "fluency": {
+      "avg": 8.980415094339623,
+      "min": 5.0,
+      "max": 10.0
+    },
+    "helpfulness": {
+      "avg": 8.376641509433963,
+      "min": 1.0,
+      "max": 10.0
+    },
+    "context": {
+      "avg": 5.5,
+      "min": 1.0,
+      "max": 10.0
+    },
+    "tool_usage": {
+      "avg": 1.0,
+      "min": 1.0,
+      "max": 1.0
+    }
+  },
+  "latency": {
+    "avg_ms": 16735.127934944703,
+    "p50_ms": 13605.379104614258,
+    "max_ms": 74306.5071105957
+  },
+  "failed": [
+    {
+      "id": "ctx-004",
+      "name": "长对话记忆",
+      "score": 15.46881188118812,
+      "errors": [
+        "Server disconnected"
+      ]
+    },
+    {
+      "id": "ctx-005",
+      "name": "累积信息理解",
+      "score": 46.0,
+      "errors": [
+        "Server disconnected"
+      ]
+    },
+    {
+      "id": "tools-001",
+      "name": "时间查询",
+      "score": 37.56666666666666,
+      "errors": []
+    },
+    {
+      "id": "intent-002",
+      "name": "意图-操作",
+      "score": 50.788000000000004,
+      "errors": []
+    },
+    {
+      "id": "intent-004",
+      "name": "复杂意图",
+      "score": 49.870000000000005,
+      "errors": []
+    }
+  ]
+}

@@ -1,0 +1,196 @@
+{
+  "timestamp": "2026-01-08T20:09:13.236067",
+  "summary": {
+    "total": 53,
+    "passed": 46,
+    "pass_rate": 86.79245283018868,
+    "avg_score": 75.46916267950077,
+    "min_score": 15.126758409785936,
+    "max_score": 91.0
+  },
+  "by_category": {
+    "basic": {
+      "count": 5,
+      "passed": 5,
+      "avg": 87.11238099670663,
+      "min": 78.76190498353314,
+      "max": 91.0
+    },
+    "context": {
+      "count": 5,
+      "passed": 3,
+      "avg": 54.28986535976874,
+      "min": 15.126758409785936,
+      "max": 82.32256838905775
+    },
+    "reasoning": {
+      "count": 6,
+      "passed": 6,
+      "avg": 81.66036119558669,
+      "min": 60.71248570633866,
+      "max": 87.4
+    },
+    "code": {
+      "count": 6,
+      "passed": 6,
+      "avg": 89.4172514619883,
+      "min": 85.10350877192982,
+      "max": 91.0
+    },
+    "language": {
+      "count": 4,
+      "passed": 4,
+      "avg": 87.84642857142858,
+      "min": 83.78571428571428,
+      "max": 91.0
+    },
+    "creative": {
+      "count": 3,
+      "passed": 2,
+      "avg": 74.93333333333334,
+      "min": 53.60000000000001,
+      "max": 89.2
+    },
+    "safety": {
+      "count": 4,
+      "passed": 4,
+      "avg": 81.6,
+      "min": 60.599999999999994,
+      "max": 89.2
+    },
+    "robustness": {
+      "count": 5,
+      "passed": 4,
+      "avg": 70.8,
+      "min": 54.800000000000004,
+      "max": 89.2
+    },
+    "performance": {
+      "count": 2,
+      "passed": 2,
+      "avg": 73.9375,
+      "min": 64.0,
+      "max": 83.875
+    },
+    "rag": {
+      "count": 2,
+      "passed": 2,
+      "avg": 62.650000000000006,
+      "min": 62.470000000000006,
+      "max": 62.830000000000005
+    },
+    "tools": {
+      "count": 4,
+      "passed": 3,
+      "avg": 73.0435,
+      "min": 46.774,
+      "max": 89.2
+    },
+    "skills": {
+      "count": 2,
+      "passed": 2,
+      "avg": 64.0,
+      "min": 64.0,
+      "max": 64.0
+    },
+    "intent": {
+      "count": 4,
+      "passed": 2,
+      "avg": 63.1135,
+      "min": 50.266000000000005,
+      "max": 87.4
+    },
+    "mcp": {
+      "count": 1,
+      "passed": 1,
+      "avg": 64.0,
+      "min": 64.0,
+      "max": 64.0
+    }
+  },
+  "by_dimension": {
+    "accuracy": {
+      "avg": 8.637584905660377,
+      "min": 1.0,
+      "max": 10.0
+    },
+    "completeness": {
+      "avg": 8.524377358490566,
+      "min": 1.0,
+      "max": 10.0
+    },
+    "relevance": {
+      "avg": 8.864,
+      "min": 2.0,
+      "max": 10.0
+    },
+    "fluency": {
+      "avg": 8.807396226415094,
+      "min": 5.0,
+      "max": 10.0
+    },
+    "helpfulness": {
+      "avg": 8.26022641509434,
+      "min": 1.0,
+      "max": 10.0
+    },
+    "context": {
+      "avg": 5.5,
+      "min": 1.0,
+      "max": 10.0
+    }
+  },
+  "latency": {
+    "avg_ms": 16841.108851687713,
+    "p50_ms": 14239.121675491333,
+    "max_ms": 67198.0414390564
+  },
+  "failed": [
+    {
+      "id": "ctx-004",
+      "name": "长对话记忆",
+      "score": 15.126758409785936,
+      "errors": [
+        "Server disconnected"
+      ]
+    },
+    {
+      "id": "ctx-005",
+      "name": "累积信息理解",
+      "score": 46.0,
+      "errors": [
+        "Server disconnected"
+      ]
+    },
+    {
+      "id": "creative-001",
+      "name": "文案写作",
+      "score": 53.60000000000001,
+      "errors": []
+    },
+    {
+      "id": "robust-004",
+      "name": "模糊指令",
+      "score": 54.800000000000004,
+      "errors": []
+    },
+    {
+      "id": "tools-001",
+      "name": "时间查询",
+      "score": 46.774,
+      "errors": []
+    },
+    {
+      "id": "intent-002",
+      "name": "意图-操作",
+      "score": 50.788000000000004,
+      "errors": []
+    },
+    {
+      "id": "intent-004",
+      "name": "复杂意图",
+      "score": 50.266000000000005,
+      "errors": []
+    }
+  ]
+}
