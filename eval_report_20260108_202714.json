@@ -1,0 +1,193 @@
+{
+  "timestamp": "2026-01-08T20:27:14.270206",
+  "summary": {
+    "total": 53,
+    "passed": 47,
+    "pass_rate": 88.67924528301887,
+    "avg_score": 78.79747822669317,
+    "min_score": 0,
+    "max_score": 91.0
+  },
+  "by_category": {
+    "basic": {
+      "count": 5,
+      "passed": 5,
+      "avg": 85.6730086261588,
+      "min": 78.76504313079404,
+      "max": 91.0
+    },
+    "context": {
+      "count": 5,
+      "passed": 4,
+      "avg": 82.38355400638312,
+      "min": 59.5,
+      "max": 91.0
+    },
+    "reasoning": {
+      "count": 6,
+      "passed": 6,
+      "avg": 82.63077320354682,
+      "min": 76.0,
+      "max": 87.4
+    },
+    "code": {
+      "count": 6,
+      "passed": 6,
+      "avg": 90.01658544639447,
+      "min": 85.09951267836684,
+      "max": 91.0
+    },
+    "language": {
+      "count": 4,
+      "passed": 3,
+      "avg": 80.24642857142857,
+      "min": 55.2,
+      "max": 91.0
+    },
+    "creative": {
+      "count": 3,
+      "passed": 3,
+      "avg": 83.8,
+      "min": 78.4,
+      "max": 89.2
+    },
+    "safety": {
+      "count": 4,
+      "passed": 4,
+      "avg": 81.6,
+      "min": 62.400000000000006,
+      "max": 89.2
+    },
+    "robustness": {
+      "count": 5,
+      "passed": 5,
+      "avg": 83.08,
+      "min": 67.6,
+      "max": 91.0
+    },
+    "performance": {
+      "count": 2,
+      "passed": 2,
+      "avg": 73.9375,
+      "min": 64.0,
+      "max": 83.875
+    },
+    "rag": {
+      "count": 2,
+      "passed": 1,
+      "avg": 54.08333333333333,
+      "min": 34.833333333333336,
+      "max": 73.33333333333333
+    },
+    "tools": {
+      "count": 4,
+      "passed": 3,
+      "avg": 61.8,
+      "min": 0,
+      "max": 89.2
+    },
+    "skills": {
+      "count": 2,
+      "passed": 2,
+      "avg": 73.9,
+      "min": 64.0,
+      "max": 83.8
+    },
+    "intent": {
+      "count": 4,
+      "passed": 2,
+      "avg": 63.118,
+      "min": 50.266000000000005,
+      "max": 87.4
+    },
+    "mcp": {
+      "count": 1,
+      "passed": 1,
+      "avg": 82.4,
+      "min": 82.4,
+      "max": 82.4
+    }
+  },
+  "by_dimension": {
+    "accuracy": {
+      "avg": 9.154,
+      "min": 3.0,
+      "max": 10.0
+    },
+    "completeness": {
+      "avg": 9.096307692307692,
+      "min": 4.0,
+      "max": 10.0
+    },
+    "relevance": {
+      "avg": 9.480923076923077,
+      "min": 5.0,
+      "max": 10.0
+    },
+    "fluency": {
+      "avg": 9.384769230769232,
+      "min": 5.474,
+      "max": 10.0
+    },
+    "helpfulness": {
+      "avg": 8.865538461538462,
+      "min": 3.0,
+      "max": 10.0
+    },
+    "context": {
+      "avg": 8.8,
+      "min": 4.0,
+      "max": 10.0
+    },
+    "source_citation": {
+      "avg": 2.0,
+      "min": 1.0,
+      "max": 3.0
+    }
+  },
+  "latency": {
+    "avg_ms": 17509.2705479208,
+    "p50_ms": 13350.7719039917,
+    "max_ms": 78619.24743652344
+  },
+  "failed": [
+    {
+      "id": "ctx-002",
+      "name": "指代消解-代词",
+      "score": 59.5,
+      "errors": []
+    },
+    {
+      "id": "lang-003",
+      "name": "格式化输出-表格",
+      "score": 55.2,
+      "errors": []
+    },
+    {
+      "id": "rag-001",
+      "name": "知识库查询",
+      "score": 34.833333333333336,
+      "errors": []
+    },
+    {
+      "id": "tools-001",
+      "name": "时间查询",
+      "score": 0,
+      "errors": [
+        "DimScore.__init__() missing 1 required positional argument: 'dimension'"
+      ]
+    },
+    {
+      "id": "intent-002",
+      "name": "意图-操作",
+      "score": 50.806,
+      "errors": []
+    },
+    {
+      "id": "intent-004",
+      "name": "复杂意图",
+      "score": 50.266000000000005,
+      "errors": []
+    }
+  ]
+}

@@ -32,9 +32,10 @@ import hashlib
 BACKEND_URL = "http://localhost:8000"
 
 # 并发配置（根据用例数量自动调整）
-MIN_CONCURRENCY = 5       # 最小并发
-MAX_CONCURRENCY = 20      # 最大并发（保护后端，避免连接断开）
-CONCURRENCY_RATIO = 0.5   # 并发比例（用例数 × 比例）
+MIN_CONCURRENCY = 3       # 最小并发
+MAX_CONCURRENCY = 10      # 最大并发（降低以避免连接断开）
+CONCURRENCY_RATIO = 0.3   # 并发比例（用例数 × 比例）
+MAX_RETRIES = 2           # 请求失败重试次数
 
 
 # ============================================================================
@@ -366,24 +367,35 @@ class ChatBotEvaluator:
     
     async def send_async(self, session: aiohttp.ClientSession, msg: str, 
                          session_id: str, timeout: int = 120) -> Dict:
-        """异步发送消息"""
+        """异步发送消息（带重试机制）"""
         start = time.time()
-        try:
-            async with session.post(
-                f"{self.backend_url}/api/v2/chat/message",
-                json={"message": msg, "session_id": session_id},
-                timeout=aiohttp.ClientTimeout(total=timeout)
-            ) as r:
-                latency = (time.time() - start) * 1000
-                if r.status == 200:
-                    data = await r.json()
-                    return {"success": True, "message": data.get("message", ""),
-                            "used_tools": data.get("used_tools", []), "latency_ms": latency}
-                return {"success": False, "error": f"HTTP {r.status}", "latency_ms": latency}
-        except asyncio.TimeoutError:
-            return {"success": False, "error": "超时", "latency_ms": (time.time()-start)*1000}
-        except Exception as e:
-            return {"success": False, "error": str(e), "latency_ms": (time.time()-start)*1000}
+        last_error = None
+        
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                async with session.post(
+                    f"{self.backend_url}/api/v2/chat/message",
+                    json={"message": msg, "session_id": session_id},
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as r:
+                    latency = (time.time() - start) * 1000
+                    if r.status == 200:
+                        data = await r.json()
+                        return {"success": True, "message": data.get("message", ""),
+                                "used_tools": data.get("used_tools", []), "latency_ms": latency}
+                    last_error = f"HTTP {r.status}"
+            except asyncio.TimeoutError:
+                last_error = "超时"
+            except aiohttp.ServerDisconnectedError:
+                last_error = "Server disconnected"
+            except Exception as e:
+                last_error = str(e)
+            
+            # 重试前等待
+            if attempt < MAX_RETRIES:
+                await asyncio.sleep(1 * (attempt + 1))  # 递增等待
+        
+        return {"success": False, "error": last_error, "latency_ms": (time.time()-start)*1000}
     
     def evaluate_case(self, case: EvalCase) -> EvalResult:
         """同步评估（用于单个用例）"""
@@ -456,9 +468,17 @@ class ChatBotEvaluator:
         
         tool_score = None
         if case.should_use_tool:
-            tool_score = 10.0 if case.should_use_tool in tools else 3.0
-            if tool_score < 5:
+            tool_used = case.should_use_tool in tools
+            tool_score = 10.0 if tool_used else 3.0
+            if not tool_used:
                 errors.append(f"未使用工具: {case.should_use_tool}")
+            # 🔧 用规则分覆盖 LLM 的 tool_usage 维度
+            if dim_scores and "tool_usage" in dim_scores:
+                dim_scores["tool_usage"] = DimScore(
+                    dimension="tool_usage",
+                    score=tool_score,
+                    reason=f"规则检查: {'已调用' if tool_used else '未调用'} {case.should_use_tool}"
+                )
         
         safety_penalty = sum(25 for f in case.forbidden_content if f.lower() in answer.lower())
         
@@ -630,9 +650,17 @@ class ChatBotEvaluator:
         
         tool_score = None
         if case.should_use_tool:
-            tool_score = 10.0 if case.should_use_tool in tools else 3.0
-            if tool_score < 5:
+            tool_used = case.should_use_tool in tools
+            tool_score = 10.0 if tool_used else 3.0
+            if not tool_used:
                 errors.append(f"未使用工具: {case.should_use_tool}")
+            # 🔧 用规则分覆盖 LLM 的 tool_usage 维度（LLM 看不到工具调用过程）
+            if dim_scores and "tool_usage" in dim_scores:
+                dim_scores["tool_usage"] = DimScore(
+                    dimension="tool_usage",
+                    score=tool_score,
+                    reason=f"规则检查: {'已调用' if tool_used else '未调用'} {case.should_use_tool}"
+                )
         
         safety_penalty = sum(25 for f in case.forbidden_content if f.lower() in answer.lower())
         

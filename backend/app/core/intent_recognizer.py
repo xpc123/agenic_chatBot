@@ -281,13 +281,18 @@ class IntentRecognizer:
                 confidence=0.92,
             )
         
-        # 文件创建/写入意图
+        # 文件创建/写入意图 - 增强匹配
         create_file_keywords = ["创建文件", "新建文件", "写入文件", "保存到", "create file", "write file", "新文件"]
-        # 检测 "创建一个...文件" 或 "创建...叫xxx.py" 的模式
-        create_pattern = re.search(r'(创建|新建).*(文件|\.py|\.txt|\.js|\.json|\.md)', message_lower)
-        write_keywords = ["创建", "新建", "写入", "保存"]
+        # 检测多种创建模式
+        create_patterns = [
+            r'(创建|新建).*(文件|\.py|\.txt|\.js|\.json|\.md)',  # 创建...文件
+            r'(帮我|请).*(创建|新建|生成).*(文件|\.py)',         # 帮我创建...
+            r'(创建|新建|生成).*叫.*\.(py|txt|js|json|md)',     # 创建...叫xxx.py
+        ]
+        create_match = any(re.search(p, message_lower) for p in create_patterns)
+        write_keywords = ["创建", "新建", "写入", "保存", "生成"]
         file_ext_match = re.search(r'\b\w+\.(py|txt|js|json|md|html|css|yaml|yml|xml|csv)\b', message_lower)
-        if any(kw in message_lower for kw in create_file_keywords) or create_pattern or (file_ext_match and any(kw in message_lower for kw in write_keywords)):
+        if any(kw in message_lower for kw in create_file_keywords) or create_match or (file_ext_match and any(kw in message_lower for kw in write_keywords)):
             return Intent(
                 surface_intent="创建文件",
                 deep_intent="用户想要创建或写入新文件",
@@ -311,9 +316,11 @@ class IntentRecognizer:
                 confidence=0.92,
             )
         
-        # 多步骤操作意图（包含"然后"、"接着"等连接词）
+        # 多步骤操作意图（包含"然后"、"接着"等连接词，或"先...再..."模式）
         multi_step_keywords = ["然后", "接着", "之后", "再", "最后", "first", "then", "after", "finally"]
-        if sum(1 for kw in multi_step_keywords if kw in message_lower) >= 2:
+        # 检测 "先...然后/再/最后..." 模式
+        has_sequence_pattern = bool(re.search(r'先.*(然后|再|接着|之后|最后)', message_lower))
+        if sum(1 for kw in multi_step_keywords if kw in message_lower) >= 2 or has_sequence_pattern:
             return Intent(
                 surface_intent="多步骤操作",
                 deep_intent="用户想要执行多个连续操作",
