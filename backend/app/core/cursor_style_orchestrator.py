@@ -304,7 +304,8 @@ class CursorStyleOrchestrator:
                 available_tools=list(self.tool_orchestrator.tools.keys()),
             )
             
-            logger.info(f"Intent (for context): {intent.task_type.value}")
+            task_type_str = intent.task_type.value if hasattr(intent.task_type, 'value') else str(intent.task_type)
+            logger.info(f"Intent (for context): {task_type_str}")
             
             context = await self._build_context(
                 message=message,
@@ -391,7 +392,7 @@ class CursorStyleOrchestrator:
             elif chunk.type == "complete" and chunk.metadata:
                 intent_data = chunk.metadata.get("intent")
                 if intent_data:
-                    intent = Intent(**intent_data) if isinstance(intent_data, dict) else intent_data
+                    intent = self._intent_from_dict(intent_data) if isinstance(intent_data, dict) else intent_data
                 duration = chunk.metadata.get("duration_ms", 0)
         
         return ChatResponse(
@@ -399,6 +400,45 @@ class CursorStyleOrchestrator:
             intent=intent,
             used_tools=list(set(used_tools)),
             duration_ms=duration,
+        )
+    
+    def _intent_from_dict(self, data: Dict[str, Any]) -> Intent:
+        """从字典重建 Intent，正确处理枚举类型转换"""
+        from .intent_recognizer import TaskType, RequiredCapability
+        
+        # 处理 task_type: 字符串 -> 枚举
+        task_type = data.get("task_type", "conversation")
+        if isinstance(task_type, str):
+            try:
+                task_type = TaskType(task_type)
+            except ValueError:
+                task_type = TaskType.CONVERSATION
+        
+        # 处理 required_capabilities: 字符串列表 -> 枚举列表
+        capabilities = data.get("required_capabilities", [])
+        if capabilities and isinstance(capabilities[0], str):
+            valid_values = [e.value for e in RequiredCapability]
+            capabilities = [
+                RequiredCapability(c) for c in capabilities 
+                if c in valid_values
+            ]
+        
+        return Intent(
+            surface_intent=data.get("surface_intent", ""),
+            deep_intent=data.get("deep_intent", ""),
+            task_type=task_type,
+            required_capabilities=capabilities,
+            suggested_tools=data.get("suggested_tools", []),
+            complexity=data.get("complexity", "low"),
+            is_multi_step=data.get("is_multi_step", False),
+            estimated_steps=data.get("estimated_steps", 1),
+            references_history=data.get("references_history", False),
+            context_keywords=data.get("context_keywords", []),
+            expected_output_format=data.get("expected_output_format", "text"),
+            response_style=data.get("response_style", "detailed"),
+            confidence=data.get("confidence", 0.8),
+            entities=data.get("entities", {}),
+            metadata=data.get("metadata", {}),
         )
     
     async def _build_context(

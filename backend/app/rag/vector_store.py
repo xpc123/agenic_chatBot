@@ -330,5 +330,24 @@ class VectorStore:
         return []
 
 
-# 全局实例
-vector_store = VectorStore()
+# 全局实例 - 延迟加载
+_vector_store: Optional[VectorStore] = None
+
+
+def get_vector_store() -> VectorStore:
+    """获取向量存储实例（延迟加载）"""
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = VectorStore()
+    return _vector_store
+
+
+# 为了向后兼容，提供模块级别的代理访问
+# 但不立即初始化
+class _VectorStoreProxy:
+    """代理类，延迟访问真实的 VectorStore"""
+    def __getattr__(self, name):
+        return getattr(get_vector_store(), name)
+
+
+vector_store = _VectorStoreProxy()

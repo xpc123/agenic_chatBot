@@ -12,7 +12,6 @@ import sys
 from datetime import datetime
 
 from .config import settings
-from .api import api_router
 from .api.v2 import api_v2_router
 from .mcp import mcp_registry
 from .exceptions import ChatBotException
@@ -106,9 +105,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由
-app.include_router(api_router)        # v1 路由（向后兼容）
-app.include_router(api_v2_router)     # v2 路由（统一版本）
+# 注册路由 - 统一使用 v2
+app.include_router(api_v2_router)
 
 
 # ==================== 异常处理器 ====================

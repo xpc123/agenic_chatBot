@@ -60,10 +60,23 @@ class RAGSystem:
             persist_dir = self.persist_directory or settings.CHROMA_PERSIST_DIR
             os.makedirs(persist_dir, exist_ok=True)
             
+            # 使用 chromadb.PersistentClient 避免与其他实例冲突
+            import chromadb
+            from chromadb.config import Settings as ChromaSettings
+            
+            # 创建或获取已存在的客户端
+            client = chromadb.PersistentClient(
+                path=persist_dir,
+                settings=ChromaSettings(
+                    anonymized_telemetry=False,
+                    allow_reset=True,
+                )
+            )
+            
             return Chroma(
-                persist_directory=persist_dir,
+                client=client,
                 embedding_function=self.embeddings,
-                collection_name="documents"
+                collection_name="rag_documents"  # 使用不同的 collection 避免冲突
             )
         
         elif self.vector_store_type == "faiss":

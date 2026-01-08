@@ -552,7 +552,16 @@ class ChatBot:
     
     def health_check(self) -> Dict[str, Any]:
         """检查后端服务健康状态"""
-        return self._get("/health")
+        url = f"{self.base_url}/health"
+        try:
+            response = self._session.get(
+                url,
+                headers=self._get_headers(),
+                timeout=self.timeout,
+            )
+            return response.json()
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
     
     def close(self):
         """关闭连接"""

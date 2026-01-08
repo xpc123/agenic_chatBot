@@ -71,8 +71,13 @@ class AppState:
         try:
             self.bot = ChatBot(base_url=self.backend_url)
             
-            # 检查连接
-            self.bot.health_check()
+            # 检查连接（允许 degraded 状态）
+            try:
+                health = self.bot.health_check()
+                status = health.get("status", "unknown")
+                logger.info(f"Backend status: {status}")
+            except Exception as e:
+                logger.warning(f"Health check warning: {e}")
             
             self.session_id = str(uuid.uuid4())[:8]
             self._initialized = True
@@ -369,7 +374,6 @@ def create_ui() -> gr.Blocks:
                 chatbot = gr.Chatbot(
                     label="对话",
                     height=500,
-                    type="messages",
                 )
                 
                 with gr.Row():

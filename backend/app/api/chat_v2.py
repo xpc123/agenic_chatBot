@@ -266,13 +266,21 @@ async def analyze_intent(request: ChatRequestV2):
             available_tools=None,
         )
         
+        # 安全地获取 task_type（处理枚举或字符串）
+        task_type = intent.task_type.value if hasattr(intent.task_type, 'value') else str(intent.task_type)
+        
+        # 安全地获取 required_capabilities（处理枚举列表或字符串列表）
+        capabilities = []
+        for c in intent.required_capabilities:
+            capabilities.append(c.value if hasattr(c, 'value') else str(c))
+        
         return IntentAnalysisResponse(
             surface_intent=intent.surface_intent,
             deep_intent=intent.deep_intent,
-            task_type=intent.task_type.value,
+            task_type=task_type,
             complexity=intent.complexity,
             is_multi_step=intent.is_multi_step,
-            required_capabilities=[c.value for c in intent.required_capabilities],
+            required_capabilities=capabilities,
             suggested_tools=intent.suggested_tools,
             confidence=intent.confidence,
         )

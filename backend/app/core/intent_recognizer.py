@@ -76,11 +76,18 @@ class Intent:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        # 安全地处理可能是枚举或字符串的值
+        task_type = self.task_type.value if hasattr(self.task_type, 'value') else str(self.task_type)
+        capabilities = [
+            c.value if hasattr(c, 'value') else str(c) 
+            for c in self.required_capabilities
+        ]
+        
         return {
             "surface_intent": self.surface_intent,
             "deep_intent": self.deep_intent,
-            "task_type": self.task_type.value,
-            "required_capabilities": [c.value for c in self.required_capabilities],
+            "task_type": task_type,
+            "required_capabilities": capabilities,
             "suggested_tools": self.suggested_tools,
             "complexity": self.complexity,
             "is_multi_step": self.is_multi_step,
