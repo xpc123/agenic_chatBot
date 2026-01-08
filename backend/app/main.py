@@ -13,6 +13,7 @@ from datetime import datetime
 
 from .config import settings
 from .api import api_router
+from .api.v2 import api_v2_router
 from .mcp import mcp_registry
 from .exceptions import ChatBotException
 from .dependencies import health_check
@@ -106,7 +107,8 @@ app.add_middleware(
 )
 
 # 注册路由
-app.include_router(api_router)
+app.include_router(api_router)        # v1 路由（向后兼容）
+app.include_router(api_v2_router)     # v2 路由（统一版本）
 
 
 # ==================== 异常处理器 ====================
@@ -173,9 +175,14 @@ async def root():
         "endpoints": {
             "docs": "/docs",
             "health": "/health",
-            "chat_api": "/api/v1/chat",
-            "rag_api": "/api/v1/documents",
-            "tools_api": "/api/v1/tools",
+            # v2 API (推荐)
+            "v2_chat": "/api/v2/chat",
+            "v2_documents": "/api/v2/documents",
+            "v2_settings": "/api/v2/settings",
+            "v2_batch": "/api/v2/batch",
+            # v1 API (向后兼容)
+            "v1_chat": "/api/v1/chat",
+            "v1_documents": "/documents",
         },
         "features": [
             "智能规划与执行",
@@ -183,6 +190,13 @@ async def root():
             "MCP 工具扩展",
             "RAG 文档检索",
             "@路径引用",
+            "统一认证 (API Key / JWT / HMAC)",
+            "批量操作支持",
+        ],
+        "auth_methods": [
+            "API Key (X-API-Key header)",
+            "JWT Bearer Token",
+            "HMAC Signature (X-App-Id + X-Timestamp + X-Signature)",
         ]
     }
 

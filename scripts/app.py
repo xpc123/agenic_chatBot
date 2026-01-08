@@ -1,15 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-Gradio SDK UI - 使用统一 SDK 的界面
+Gradio UI - 使用 Agentic SDK 的智能助手界面
 
-演示如何使用 agentic_sdk 构建完整 UI：
-- 💬 Chat - 智能对话（使用 SDK）
-- ⚙️ Settings - 设置管理（使用 SDK）
+功能：
+- 💬 Chat - 智能对话（支持 RAG、工具调用）
+- ⚙️ Settings - 设置管理（索引、规则、技能、MCP）
+
+使用前请先启动后端服务：
+  cd backend && python run.py
+
+启动方式：
+  python scripts/app.py
+  python scripts/app.py --backend-url http://api.example.com:8000
 """
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+import uuid
+import os
 
 # 获取项目根目录
 SCRIPT_DIR = Path(__file__).parent
@@ -25,48 +33,55 @@ load_dotenv(PROJECT_ROOT / 'backend' / '.env')
 import gradio as gr
 from loguru import logger
 
-# 使用统一 SDK
-from agentic_sdk import ChatBot, ChatConfig
+# 使用简化后的 SDK
+from agentic_sdk import ChatBot, ConnectionError
 
 
 # ==================== 常量 ====================
 
-HISTORY_DIR = PROJECT_ROOT / 'data' / 'chat_history'
-HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+# 后端服务地址（可通过环境变量配置）
+DEFAULT_BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 
 
 # ==================== 全局状态 ====================
 
 class AppState:
-    """应用状态 - 使用 SDK"""
+    """应用状态 - 仅支持远程模式"""
     
     def __init__(self):
         self.bot: Optional[ChatBot] = None
         self.session_id: str = ""
+        self.backend_url: str = DEFAULT_BACKEND_URL
         self._initialized = False
     
     @property
     def initialized(self) -> bool:
         return self._initialized
     
-    def initialize(self):
-        """初始化 SDK"""
+    def initialize(self, backend_url: Optional[str] = None):
+        """初始化 SDK（连接到后端服务）"""
         if self._initialized:
             return
         
-        logger.info("Initializing ChatBot SDK...")
+        if backend_url:
+            self.backend_url = backend_url
+        
+        logger.info(f"Connecting to backend: {self.backend_url}")
         
         try:
-            # 使用嵌入模式（直接调用后端）
-            config = ChatConfig.full()
-            config.data_dir = HISTORY_DIR
+            self.bot = ChatBot(base_url=self.backend_url)
             
-            self.bot = ChatBot(config)
-            self.session_id = self.bot._get_or_create_session()
+            # 检查连接
+            self.bot.health_check()
+            
+            self.session_id = str(uuid.uuid4())[:8]
             self._initialized = True
             
-            logger.info(f"ChatBot SDK initialized, session: {self.session_id}")
+            logger.info(f"Connected! Session: {self.session_id}")
             
+        except ConnectionError as e:
+            logger.error(f"Cannot connect to backend: {e}")
+            raise
         except Exception as e:
             logger.error(f"Failed to initialize: {e}")
             raise
@@ -80,7 +95,7 @@ state = AppState()
 
 def chat_fn(message: str, history: List[Dict]) -> Tuple[str, List[Dict]]:
     """
-    对话处理函数 (Gradio 6.0 格式)
+    对话处理函数
     
     Args:
         message: 用户消息
@@ -97,7 +112,7 @@ def chat_fn(message: str, history: List[Dict]) -> Tuple[str, List[Dict]]:
         try:
             state.initialize()
         except Exception as e:
-            error_msg = f"❌ 初始化失败: {str(e)}"
+            error_msg = f"❌ 连接失败: {str(e)}\n\n请确保后端服务已启动：\n```\ncd backend && python run.py\n```"
             return "", history + [
                 {"role": "user", "content": message},
                 {"role": "assistant", "content": error_msg}
@@ -118,6 +133,10 @@ def chat_fn(message: str, history: List[Dict]) -> Tuple[str, List[Dict]]:
             for src in response.sources[:3]:
                 reply += f"- {src.get('source', 'unknown')}\n"
         
+        # 显示使用的工具
+        if response.used_tools:
+            reply += f"\n🔧 使用工具: {', '.join(response.used_tools)}"
+        
         return "", history + [
             {"role": "user", "content": message},
             {"role": "assistant", "content": reply}
@@ -135,14 +154,18 @@ def chat_fn(message: str, history: List[Dict]) -> Tuple[str, List[Dict]]:
 def clear_chat():
     """清空对话"""
     if state.initialized:
-        state.bot.clear_conversation(state.session_id)
+        try:
+            state.bot.clear_session(state.session_id)
+        except Exception as e:
+            logger.warning(f"Clear session warning: {e}")
     return []
 
 
 def new_session():
     """新建会话"""
     if state.initialized:
-        state.session_id = state.bot._get_or_create_session()
+        state.session_id = str(uuid.uuid4())[:8]
+        logger.info(f"New session: {state.session_id}")
     return []
 
 
@@ -151,7 +174,7 @@ def new_session():
 def get_index_status() -> str:
     """获取索引状态"""
     if not state.initialized:
-        return "未初始化"
+        return "未连接"
     
     try:
         status = state.bot.get_index_status(str(PROJECT_ROOT))
@@ -163,7 +186,10 @@ def get_index_status() -> str:
 def sync_index(force: bool = False) -> str:
     """同步索引"""
     if not state.initialized:
-        state.initialize()
+        try:
+            state.initialize()
+        except Exception as e:
+            return f"❌ 连接失败: {e}"
     
     try:
         result = state.bot.sync_index(force=force, workspace=str(PROJECT_ROOT))
@@ -175,7 +201,7 @@ def sync_index(force: bool = False) -> str:
 def clear_index() -> str:
     """清除索引"""
     if not state.initialized:
-        return "未初始化"
+        return "未连接"
     
     try:
         state.bot.clear_index(str(PROJECT_ROOT))
@@ -187,7 +213,10 @@ def clear_index() -> str:
 def list_skills() -> List[List[str]]:
     """列出技能"""
     if not state.initialized:
-        state.initialize()
+        try:
+            state.initialize()
+        except:
+            return []
     
     try:
         skills = state.bot.list_skills()
@@ -205,10 +234,13 @@ def list_skills() -> List[List[str]]:
 def toggle_skill(skill_id: str, enable: bool) -> str:
     """切换技能状态"""
     if not state.initialized:
-        return "未初始化"
+        return "未连接"
+    
+    if not skill_id.strip():
+        return "❌ 请输入技能 ID"
     
     try:
-        state.bot.toggle_skill(skill_id, enable)
+        state.bot.toggle_skill(skill_id.strip(), enable)
         return f"✅ 技能 {skill_id} 已{'启用' if enable else '禁用'}"
     except Exception as e:
         return f"❌ 操作失败: {e}"
@@ -217,7 +249,10 @@ def toggle_skill(skill_id: str, enable: bool) -> str:
 def get_rules() -> Dict[str, List[str]]:
     """获取规则"""
     if not state.initialized:
-        state.initialize()
+        try:
+            state.initialize()
+        except:
+            return {"user_rules": [], "project_rules": []}
     
     try:
         return state.bot.get_rules()
@@ -232,7 +267,10 @@ def add_rule(content: str, rule_type: str) -> str:
         return "❌ 规则内容不能为空"
     
     if not state.initialized:
-        state.initialize()
+        try:
+            state.initialize()
+        except Exception as e:
+            return f"❌ 连接失败: {e}"
     
     try:
         state.bot.add_rule(content.strip(), rule_type)
@@ -244,7 +282,10 @@ def add_rule(content: str, rule_type: str) -> str:
 def list_mcp_servers() -> List[List[str]]:
     """列出 MCP 服务器"""
     if not state.initialized:
-        state.initialize()
+        try:
+            state.initialize()
+        except:
+            return []
     
     try:
         servers = state.bot.list_mcp_servers()
@@ -261,7 +302,10 @@ def list_mcp_servers() -> List[List[str]]:
 def get_summary() -> str:
     """获取设置摘要"""
     if not state.initialized:
-        state.initialize()
+        try:
+            state.initialize()
+        except Exception as e:
+            return f"❌ 连接失败: {e}"
     
     try:
         summary = state.bot.get_settings_summary(str(PROJECT_ROOT))
@@ -275,17 +319,48 @@ def get_summary() -> str:
         return f"❌ 获取失败: {e}"
 
 
+def search_documents(query: str) -> str:
+    """搜索文档"""
+    if not query.strip():
+        return "❌ 请输入搜索内容"
+    
+    if not state.initialized:
+        try:
+            state.initialize()
+        except Exception as e:
+            return f"❌ 连接失败: {e}"
+    
+    try:
+        results = state.bot.search_documents(query.strip(), top_k=5)
+        if not results.get('results'):
+            return "未找到相关文档"
+        
+        output = "📚 搜索结果:\n\n"
+        for i, r in enumerate(results['results'], 1):
+            score = r.get('score', 0)
+            source = r.get('source', 'unknown')
+            content = r.get('content', '')[:200]
+            output += f"**{i}. {source}** (相关度: {score:.2f})\n{content}...\n\n"
+        
+        return output
+    except Exception as e:
+        return f"❌ 搜索失败: {e}"
+
+
 # ==================== 创建 UI ====================
 
 def create_ui() -> gr.Blocks:
     """创建 Gradio UI"""
     
-    with gr.Blocks(title="Agentic ChatBot (SDK)") as app:
+    with gr.Blocks(
+        title="Agentic ChatBot",
+        theme=gr.themes.Soft(),
+    ) as app:
         
         gr.Markdown("""
         # 🤖 Agentic ChatBot
         
-        **基于统一 SDK 的智能助手** - 支持 RAG、工具调用、技能、记忆等功能
+        **智能助手** - 支持 RAG、工具调用、技能、记忆等功能
         """)
         
         with gr.Tabs():
@@ -294,11 +369,12 @@ def create_ui() -> gr.Blocks:
                 chatbot = gr.Chatbot(
                     label="对话",
                     height=500,
+                    type="messages",
                 )
                 
                 with gr.Row():
                     msg = gr.Textbox(
-                        placeholder="输入消息...",
+                        placeholder="输入消息... (按 Enter 发送)",
                         show_label=False,
                         scale=9,
                     )
@@ -313,6 +389,23 @@ def create_ui() -> gr.Blocks:
                 send_btn.click(chat_fn, [msg, chatbot], [msg, chatbot])
                 clear_btn.click(clear_chat, outputs=chatbot)
                 new_btn.click(new_session, outputs=chatbot)
+            
+            # ==================== Documents Tab ====================
+            with gr.Tab("📚 Documents"):
+                gr.Markdown("### 知识库搜索")
+                
+                with gr.Row():
+                    search_input = gr.Textbox(
+                        label="搜索内容",
+                        placeholder="输入关键词搜索知识库...",
+                        scale=4,
+                    )
+                    search_btn = gr.Button("🔍 搜索", scale=1)
+                
+                search_result = gr.Markdown(label="搜索结果")
+                
+                search_btn.click(search_documents, inputs=search_input, outputs=search_result)
+                search_input.submit(search_documents, inputs=search_input, outputs=search_result)
             
             # ==================== Settings Tab ====================
             with gr.Tab("⚙️ Settings"):
@@ -415,11 +508,11 @@ def create_ui() -> gr.Blocks:
                         refresh_summary_btn.click(get_summary, outputs=summary_text)
         
         # 页脚
-        gr.Markdown("""
+        gr.Markdown(f"""
         ---
-        **Agentic ChatBot SDK** | [GitHub](https://github.com) | v0.1.0
+        **Agentic ChatBot SDK** v0.3.0 | 后端: `{state.backend_url}`
         
-        *使用 `agentic_sdk` 构建，支持嵌入模式和远程模式*
+        *需要先启动后端服务: `cd backend && python run.py`*
         """)
     
     return app
@@ -427,20 +520,43 @@ def create_ui() -> gr.Blocks:
 
 def main():
     """主入口"""
-    print("""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Agentic ChatBot Gradio UI")
+    parser.add_argument(
+        "--backend-url",
+        type=str,
+        default=DEFAULT_BACKEND_URL,
+        help=f"后端服务地址（默认: {DEFAULT_BACKEND_URL}）"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=7870,
+        help="Gradio 服务端口（默认: 7870）"
+    )
+    
+    args = parser.parse_args()
+    
+    # 设置后端地址
+    state.backend_url = args.backend_url
+    
+    print(f"""
 ╔═══════════════════════════════════════════════════╗
-║         🤖 Agentic ChatBot (SDK Version)          ║
+║           🤖 Agentic ChatBot Web UI               ║
 ╠═══════════════════════════════════════════════════╣
-║  使用统一 SDK 的 Gradio UI                         ║
-║  - 嵌入模式: 直接调用后端                           ║
-║  - 远程模式: 通过 HTTP API                          ║
+║  后端服务: {args.backend_url:<36}║
+║  UI 端口: {args.port:<37}║
+╠═══════════════════════════════════════════════════╣
+║  ⚠️  请确保后端服务已启动！                       ║
+║     cd backend && python run.py                   ║
 ╚═══════════════════════════════════════════════════╝
     """)
     
     app = create_ui()
     app.launch(
         server_name="0.0.0.0",
-        server_port=7870,
+        server_port=args.port,
         share=False,
     )
 

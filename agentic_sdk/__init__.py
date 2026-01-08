@@ -3,14 +3,18 @@
 Agentic ChatBot SDK
 ===================
 
-通用 AI 助手 SDK，可嵌入任何 Python 应用。
+轻量级 SDK 客户端，通过 REST API 与后端服务通信。
+
+使用前请确保后端服务已启动::
+
+    cd backend && python run.py
 
 快速开始::
 
     from agentic_sdk import ChatBot
     
-    # 创建实例
-    bot = ChatBot()
+    # 创建客户端（连接到后端服务）
+    bot = ChatBot(base_url="http://localhost:8000")
     
     # 同步对话
     response = bot.chat("你好")
@@ -18,93 +22,71 @@ Agentic ChatBot SDK
     
     # 流式对话
     for chunk in bot.chat_stream("讲个故事"):
-        print(chunk.text, end="", flush=True)
+        print(chunk.content, end="", flush=True)
 
-高级用法::
+带认证::
 
-    from agentic_sdk import ChatBot, ChatConfig
-    
-    # 自定义配置
-    config = ChatConfig(
-        enable_rag=True,
-        enable_memory=True,
-        enable_skills=True,
+    bot = ChatBot(
+        base_url="http://localhost:8000",
+        api_key="your-api-key"
     )
-    bot = ChatBot(config)
+
+文档搜索::
+
+    # 搜索知识库
+    results = bot.search_documents("如何使用?")
     
-    # 添加自定义工具
-    @bot.tool
-    def get_weather(city: str) -> str:
-        return f"{city}天气：晴，25°C"
+    # 列出文档
+    docs = bot.list_documents()
+
+技能管理::
+
+    # 列出技能
+    skills = bot.list_skills()
     
-    # 加载知识库
-    bot.load_documents(["./docs/manual.pdf"])
-    
-    # 对话
-    response = bot.chat("北京天气怎么样？")
+    # 启用/禁用技能
+    bot.toggle_skill("code_assistant", enabled=True)
 """
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 __author__ = "Agentic ChatBot Team"
 
-from .chatbot import ChatBot
-from .config import ChatConfig, LLMConfig, RAGConfig, MemoryConfig, SkillsConfig, MCPConfig
-from .types import ChatResponse, ChatChunk, ToolCall, MessageRole
-from .settings import SettingsManager, IndexingStatus, SkillInfo, RuleInfo, MCPServerInfo
-from .remote_client import RemoteClient
+from .client import ChatBot
+from .types import (
+    ChatResponse,
+    ChatChunk,
+    IntentResult,
+    ToolCall,
+    MessageRole,
+    Message,
+    Conversation,
+)
+from .exceptions import (
+    AgenticSDKError,
+    ConnectionError,
+    AuthenticationError,
+    APIError,
+    ValidationError,
+    TimeoutError,
+)
 
 __all__ = [
-    # 核心
+    # 核心客户端
     "ChatBot",
-    "ChatConfig",
-    "RemoteClient",
-    # 配置
-    "LLMConfig",
-    "RAGConfig", 
-    "MemoryConfig",
-    "SkillsConfig",
-    "MCPConfig",
-    # 类型
+    # 响应类型
     "ChatResponse",
     "ChatChunk",
+    "IntentResult",
+    # 对话类型
     "ToolCall",
     "MessageRole",
-    # 设置管理（对应 Settings UI）
-    "SettingsManager",
-    "IndexingStatus",
-    "SkillInfo",
-    "RuleInfo",
-    "MCPServerInfo",
-    # 服务器（可选）
-    "create_server",
-    "run_server",
-    # UI（可选）
-    "create_ui",
-    "launch_ui",
+    "Message",
+    "Conversation",
+    # 异常
+    "AgenticSDKError",
+    "ConnectionError",
+    "AuthenticationError",
+    "APIError",
+    "ValidationError",
+    "TimeoutError",
 ]
-
-
-# 延迟导入可选组件
-def create_server(config=None):
-    """创建 HTTP API 服务器"""
-    from .server import ChatBotServer
-    return ChatBotServer(config)
-
-
-def run_server(host="0.0.0.0", port=8000, config=None):
-    """运行 HTTP API 服务器"""
-    from .server import run_server as _run
-    _run(host=host, port=port, config=config)
-
-
-def create_ui(bot=None, config=None, **kwargs):
-    """创建 Gradio UI"""
-    from .ui import create_ui as _create
-    return _create(bot, config, **kwargs)
-
-
-def launch_ui(host="0.0.0.0", port=7860, config=None, **kwargs):
-    """启动 Gradio UI"""
-    from .ui import launch_ui as _launch
-    _launch(host=host, port=port, config=config, **kwargs)
-

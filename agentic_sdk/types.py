@@ -37,33 +37,58 @@ class ChatResponse:
     
     Attributes:
         text: 响应文本
-        tool_calls: 工具调用列表
-        sources: RAG 来源引用
         session_id: 会话 ID
-        metadata: 额外元数据
+        used_tools: 使用的工具列表
+        sources: RAG 来源引用
+        duration_ms: 处理时间（毫秒）
+        intent: 识别的意图
     """
     text: str
-    tool_calls: List[ToolCall] = field(default_factory=list)
-    sources: List[Dict[str, Any]] = field(default_factory=list)
     session_id: str = ""
+    used_tools: List[str] = field(default_factory=list)
+    sources: List[Dict[str, Any]] = field(default_factory=list)
+    duration_ms: int = 0
+    intent: Optional[str] = None
     
-    # 性能指标
+    # 兼容旧版本
+    tool_calls: List[ToolCall] = field(default_factory=list)
     latency_ms: int = 0
     token_count: int = 0
-    
-    # 元数据
     metadata: Dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
     
     @property
     def has_tool_calls(self) -> bool:
         """是否包含工具调用"""
-        return len(self.tool_calls) > 0
+        return len(self.tool_calls) > 0 or len(self.used_tools) > 0
     
     @property
     def has_sources(self) -> bool:
         """是否包含知识库引用"""
         return len(self.sources) > 0
+
+
+@dataclass
+class IntentResult:
+    """
+    意图分析结果
+    
+    Attributes:
+        surface_intent: 表面意图
+        deep_intent: 深层意图
+        task_type: 任务类型
+        complexity: 复杂度
+        is_multi_step: 是否多步骤
+        suggested_tools: 建议工具
+        confidence: 置信度
+    """
+    surface_intent: str = ""
+    deep_intent: str = ""
+    task_type: str = ""
+    complexity: str = ""
+    is_multi_step: bool = False
+    suggested_tools: List[str] = field(default_factory=list)
+    confidence: float = 0.0
 
 
 @dataclass
