@@ -71,12 +71,12 @@ async def tools_health(user: AuthenticatedUser = Depends(get_current_user)):
             "servers": [
                 {
                     "name": s.name,
-                    "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
-                    "tool_count": s.tool_count,
+                    "enabled": s.enabled,
+                    "tool_count": len(s.tools),
                 }
                 for s in servers
             ],
-            "total_tools": sum(s.tool_count for s in servers),
+            "total_tools": sum(len(s.tools) for s in servers),
         }
         
     except Exception as e:
@@ -97,9 +97,9 @@ async def list_servers(user: AuthenticatedUser = Depends(get_current_user)):
                 {
                     "name": s.name,
                     "url": s.url,
-                    "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
-                    "tool_count": s.tool_count,
-                    "description": getattr(s, 'description', None),
+                    "enabled": s.enabled,
+                    "tool_count": len(s.tools),
+                    "description": s.description,
                 }
                 for s in servers
             ],
