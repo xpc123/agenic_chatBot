@@ -292,8 +292,123 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_orchestrator_with_compaction(self):
         """测试编排器与压缩集成"""
-        # 跳过需要 LLM 的测试
-        pytest.skip("需要 LLM 客户端")
+        from backend.app.llm.client import get_llm_client
+        from backend.app.core.cursor_style_orchestrator import CursorStyleOrchestrator
+        from backend.app.core.practical_tools import get_practical_tools
+        from backend.app.core import session_compactor as sc_module
+        
+        # 重置单例以确保使用正确的 LLM 客户端
+        sc_module._compactor_instance = None
+        
+        # 获取 LLM 客户端
+        llm_client = get_llm_client()
+        
+        # 创建编排器
+        orchestrator = CursorStyleOrchestrator(
+            llm_client=llm_client,
+            tools=get_practical_tools(),
+            enable_rag=False,  # 简化测试
+            enable_skills=False,
+            enable_memory=False,
+            enable_preferences=False,
+            enable_auto_index=False,
+        )
+        
+        # 创建测试会话并添加消息
+        session_id = "test_compaction_session"
+        
+        # 模拟添加多条消息（直接操作 sessions 字典）
+        orchestrator.sessions[session_id] = {"history": [], "tool_results": []}
+        for i in range(35):
+            orchestrator.sessions[session_id]["history"].append({
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"这是测试消息 {i + 1}，包含足够多的内容用于测试压缩功能。" * 3,
+                "timestamp": datetime.now().isoformat(),
+            })
+        
+        # 验证历史长度
+        history = orchestrator.sessions[session_id]["history"]
+        assert len(history) > 30
+        
+        # 执行强制压缩（因为测试消息 token 数可能低于默认阈值）
+        result = await orchestrator.compact_session(session_id, force=True)
+        
+        # 验证压缩结果
+        assert result is not None
+        assert result.original_messages > result.compacted_messages, \
+            f"Expected compression: {result.original_messages} -> {result.compacted_messages}"
+        assert result.compression_ratio > 0
+        
+        print(f"\n压缩结果: {result.original_messages} -> {result.compacted_messages} 消息")
+        print(f"压缩率: {result.compression_ratio:.1%}")
+        
+        # 清理
+        orchestrator.clear_session(session_id)
+    
+    @pytest.mark.asyncio
+    async def test_session_compactor_with_llm_summary(self):
+        """测试使用 LLM 生成摘要的压缩器"""
+        from backend.app.llm.client import get_llm_client
+        from backend.app.core.session_compactor import SessionCompactor, CompactionConfig
+        from backend.app.models.chat import ChatMessage, MessageRole
+        from datetime import datetime
+        
+        llm_client = get_llm_client()
+        
+        config = CompactionConfig(
+            auto_compact_threshold=500,
+            preserve_recent=2,
+            generate_summary=True,  # 启用 LLM 摘要
+            max_summary_length=500,
+        )
+        
+        compactor = SessionCompactor(llm_client=llm_client, config=config)
+        
+        # 创建测试消息
+        messages = [
+            ChatMessage(
+                role=MessageRole.USER,
+                content="请帮我分析一下 Python 项目的架构设计",
+                timestamp=datetime.now(),
+            ),
+            ChatMessage(
+                role=MessageRole.ASSISTANT,
+                content="好的，我来分析这个项目的架构。首先，项目采用了分层架构...",
+                timestamp=datetime.now(),
+            ),
+            ChatMessage(
+                role=MessageRole.USER,
+                content="能详细解释一下 RAG 模块吗？",
+                timestamp=datetime.now(),
+            ),
+            ChatMessage(
+                role=MessageRole.ASSISTANT,
+                content="RAG（Retrieval Augmented Generation）模块负责检索增强生成...",
+                timestamp=datetime.now(),
+            ),
+            ChatMessage(
+                role=MessageRole.USER,
+                content="谢谢，这个解释很清楚",
+                timestamp=datetime.now(),
+            ),
+            ChatMessage(
+                role=MessageRole.ASSISTANT,
+                content="不客气！如果还有其他问题，随时问我。",
+                timestamp=datetime.now(),
+            ),
+        ]
+        
+        # 强制压缩
+        compacted, result = await compactor.compact(messages, force=True)
+        
+        # 验证结果
+        assert result.original_messages == 6
+        assert result.compacted_messages < result.original_messages
+        
+        # 验证摘要存在
+        if result.summary:
+            print(f"\n生成的摘要:\n{result.summary}")
+            assert len(result.summary) > 0
     
     def test_tools_registration(self):
         """测试工具注册"""
